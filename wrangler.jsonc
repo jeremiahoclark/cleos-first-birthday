@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cleos-first-birthday",
+  "account_id": "04b10da5b2c496a790ebb3f60bfe1b18",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-06-20",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    // Dry mode is the safety default. It is ON unless set to the exact string
+    // "false". DRY_RUN and BETA_MODE are aliases; either keeps writes blocked,
+    // so BOTH must read "false" to enable live D1/KV/R2 writes.
+    "DRY_RUN": "true",
+    "BETA_MODE": "true",
+    "EVENT_NAME": "Cleo's First Birthday Team Quest",
+    "GAME_DURATION_SECONDS": "3600"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DEVICE_KV",
+      "id": "ccf087578f97403193b00aaad13a1f72",
+      "preview_id": "9007dd198a204b9b9cabf5b334a3b181"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cleos-first-birthday",
+      "database_id": "ed295e24-4032-4220-99ff-b286418722ce"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "cleos-first-birthday-media"
+    }
+  ]
+}

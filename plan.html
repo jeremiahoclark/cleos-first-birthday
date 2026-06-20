@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cleo's First Birthday Quest Plan</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #231f20;
+        --muted: #645c58;
+        --line: #ded7d0;
+        --paper: #fffaf5;
+        --panel: #ffffff;
+        --coral: #df6f61;
+        --mint: #2f8f83;
+        --blue: #3f72a8;
+        --gold: #c48a2c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+        color: var(--ink);
+        background: var(--paper);
+      }
+
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0 64px;
+      }
+
+      header {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 28px;
+        margin-bottom: 32px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.12;
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 780px;
+        font-size: clamp(2.4rem, 7vw, 5.2rem);
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 1.55rem;
+        margin-bottom: 14px;
+      }
+
+      h3 {
+        font-size: 1.05rem;
+        margin-bottom: 8px;
+      }
+
+      p {
+        margin: 0 0 14px;
+      }
+
+      .kicker {
+        margin-bottom: 12px;
+        color: var(--coral);
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        font-size: .82rem;
+      }
+
+      .intro {
+        max-width: 760px;
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 1.14rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+      }
+
+      section {
+        margin-top: 34px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 20px;
+      }
+
+      .priority {
+        min-height: 210px;
+      }
+
+      .priority strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 1.08rem;
+      }
+
+      .number {
+        display: inline-grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        margin-bottom: 14px;
+        border-radius: 999px;
+        background: var(--ink);
+        color: white;
+        font-weight: 800;
+      }
+
+      ul,
+      ol {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      li {
+        margin: 7px 0;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: #fff;
+        color: var(--muted);
+        font-size: .92rem;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 12px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 104px 1fr;
+        gap: 16px;
+        align-items: start;
+        padding: 16px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .time {
+        color: var(--blue);
+        font-weight: 800;
+      }
+
+      .accent {
+        border-left: 5px solid var(--mint);
+      }
+
+      .questions {
+        border-left: 5px solid var(--gold);
+      }
+
+      .quest-list {
+        display: grid;
+        gap: 14px;
+        padding-left: 0;
+        list-style: none;
+        counter-reset: quest;
+      }
+
+      .quest-list li {
+        counter-increment: quest;
+        margin: 0;
+        padding: 18px 18px 18px 58px;
+        position: relative;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .quest-list li::before {
+        content: counter(quest);
+        position: absolute;
+        left: 18px;
+        top: 18px;
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: var(--coral);
+        color: white;
+        font-weight: 800;
+      }
+
+      .quest-list strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .stage-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .stage {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 18px;
+      }
+
+      .stage h3 {
+        color: var(--blue);
+      }
+
+      .stage-note {
+        color: var(--muted);
+        font-size: .94rem;
+        margin-bottom: 12px;
+      }
+
+      @media (max-width: 800px) {
+        main {
+          width: min(100% - 24px, 1040px);
+          padding-top: 32px;
+        }
+
+        .grid,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+
+        .step {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="kicker">Product plan</div>
+        <h1>Cleo's First Birthday Team Quest</h1>
+        <p class="intro">
+          A lightweight party game where guests are randomly grouped into teams, race through photo and meet-new-people challenges, and leave the parents with a joyful archive of the day.
+        </p>
+      </header>
+
+      <section>
+        <h2>Primary Goals</h2>
+        <div class="grid">
+          <article class="card priority">
+            <span class="number">1</span>
+            <strong>Capture pictures for the parents</strong>
+            <p>
+              The game should produce lots of candid, labeled photos: guests with Cleo, guests with the parents, cross-family group shots, funny team moments, and small video messages.
+            </p>
+          </article>
+          <article class="card priority">
+            <span class="number">2</span>
+            <strong>Help people meet each other</strong>
+            <p>
+              Challenges should give guests a natural reason to introduce themselves across families, friend groups, neighbors, and generations.
+            </p>
+          </article>
+          <article class="card priority">
+            <span class="number">3</span>
+            <strong>Make it feel like a real game</strong>
+            <p>
+              Team names, a 60-minute quest window, binary scoring, post-game awards, and a clear winner should make the activity energetic without taking over the whole party.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="two-col">
+        <article class="card accent">
+          <h2>Core Concept</h2>
+          <p>
+            Guests scan a QR code when they arrive, enter their name, and are automatically assigned to a randomized team with a playful team name. Each team gets the same broad objective: complete as many birthday quests as possible before the timer ends.
+          </p>
+          <p>
+            Quest prompts combine photo proof, social discovery, and memory collection. The app should stay simple enough for someone to join in under 20 seconds.
+          </p>
+          <div class="pill-row">
+            <span class="pill">No account</span>
+            <span class="pill">QR entry</span>
+            <span class="pill">Random teams</span>
+            <span class="pill">Photo-first</span>
+            <span class="pill">Timed round</span>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Game Shape</h2>
+          <ul>
+            <li>Game window: one 60-minute countdown.</li>
+            <li>Teams: 4 to 7 people, randomized as guests join.</li>
+            <li>Team names: automatically generated, cute, readable, and non-cringey.</li>
+            <li>Quest board: 10 exceedingly difficult quests, delivered in stages of three plus one shared final quest.</li>
+            <li>Randomization: for quest slots 1 through 9, each stage has two possible quests per slot and each team randomly receives one.</li>
+            <li>Final quest: every team gets The Future Advice Council as quest 10.</li>
+            <li>Scoring: 1 point per completed quest. Partial progress does not score.</li>
+            <li>End state: winner announcement plus a parent-facing download/gallery.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section>
+        <h2>Party Flow</h2>
+        <div class="card timeline">
+          <div class="step">
+            <div class="time">Arrival</div>
+            <div>
+              <h3>Scan, join, get placed</h3>
+              <p>Guest scans the QR code, enters first name, and gets assigned to a team. The app shows their team name, teammates, and a countdown to game start.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="time">Kickoff</div>
+            <div>
+              <h3>Host starts the round</h3>
+              <p>The parent or host taps start. Everyone sees the same timer and a quest board for their team.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="time">Game</div>
+            <div>
+              <h3>Complete quests</h3>
+              <p>Teams move around the party, meet people, take photos, and submit quick proof. Some quests require names or short notes so the memory archive is useful later.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="time">Final 5</div>
+            <div>
+              <h3>Urgency mode</h3>
+              <p>The app announces the final countdown and shows which quests are still unsubmitted. Teams can scramble for one last complete submission, but the game should not award partial credit.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="time">Awards</div>
+            <div>
+              <h3>Celebrate the results</h3>
+              <p>The host announces the winning team and a few fun awards: best photo, best new friendship, sweetest message, and most chaotic group shot.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <article class="card">
+          <h2>Staged Quest Pool</h2>
+          <p>
+            Each team receives 10 total quests. Quests 1 through 9 are randomized from staged pairs: one from each pair in slots 1-3, 4-6, and 7-9. Quest 10 is always The Future Advice Council.
+          </p>
+          <div class="stage-grid">
+            <div class="stage">
+              <h3>Stage 1: Warm-Up Quests, Slots 1-3</h3>
+              <p class="stage-note">These are hard enough to start movement, but not so hard that teams stall early.</p>
+              <ol class="quest-list">
+                <li>
+                  <strong>The Cleo Coalition</strong>
+                  Submit one photo with Cleo, one parent, and at least one person who had not met someone else in the photo before today. Include everyone's first names.
+                </li>
+                <li>
+                  <strong>The Tiny Welcoming Committee</strong>
+                  Find two guests who are meeting Cleo for the first time today. Submit a photo of them with Cleo or near the birthday setup, plus one word each guest uses to describe her.
+                </li>
+                <li>
+                  <strong>The Parent Origin Story</strong>
+                  Find someone who knew one of Cleo's parents before Cleo was born. Submit a photo with that person and a one-sentence story about the parent.
+                </li>
+                <li>
+                  <strong>The First-Year Witness</strong>
+                  Find someone who saw Cleo during one of her first three months. Submit a photo with them and one memory from that newborn season.
+                </li>
+                <li>
+                  <strong>The New Friendship Proof</strong>
+                  Introduce two guests who did not know each other before the party. Submit a photo of them together and one thing they discovered they have in common.
+                </li>
+                <li>
+                  <strong>The Silly Hat Snapshot</strong>
+                  Take a picture with someone wearing a silly hat. Include their first name and whether the hat was planned or discovered during the quest.
+                </li>
+              </ol>
+            </div>
+
+            <div class="stage">
+              <h3>Stage 2: Social-Mixing Quests, Slots 4-6</h3>
+              <p class="stage-note">These require teams to cross groups, ask better questions, and create photos the parents will want later.</p>
+              <ol class="quest-list">
+                <li>
+                  <strong>The Family Bridge</strong>
+                  Submit a group photo with at least one person from each side of Cleo's family or social world. The caption must explain how each person is connected to Cleo.
+                </li>
+                <li>
+                  <strong>The Circle Crossover</strong>
+                  Submit a photo with four guests from four different relationship circles, such as family, friend, neighbor, coworker, church, school, or parent group. Label each circle.
+                </li>
+                <li>
+                  <strong>The Farthest Traveler</strong>
+                  Find the guest who traveled the farthest to attend. Submit a photo with them and note where they came from.
+                </li>
+                <li>
+                  <strong>The Local Legend</strong>
+                  Find the guest who lives closest to the party. Submit a photo with them and ask for one local place Cleo should visit when she is older.
+                </li>
+                <li>
+                  <strong>The Three-Generation Shot</strong>
+                  Submit a photo that includes three generations. If three generations are not present, substitute the oldest and youngest guests in one photo and include their ages or approximate ages.
+                </li>
+                <li>
+                  <strong>The Timeline Lineup</strong>
+                  Gather four people who met Cleo or her parents at different life stages. Submit a photo ordered from earliest connection to newest connection, with the year or season each connection started.
+                </li>
+              </ol>
+            </div>
+
+            <div class="stage">
+              <h3>Stage 3: Hard Mode Quests, Slots 7-9</h3>
+              <p class="stage-note">These are coordination-heavy and should feel like a real late-game push.</p>
+              <ol class="quest-list">
+                <li>
+                  <strong>The Time Capsule Toast</strong>
+                  Record a 15-second video message for Cleo to watch years from now. At least three guests from different households must appear or speak.
+                </li>
+                <li>
+                  <strong>The Mini Documentary</strong>
+                  Record a 20-second video where three guests each answer: "What should Cleo know about this day?" No duplicate answers.
+                </li>
+                <li>
+                  <strong>The Cleo Museum</strong>
+                  Submit a four-photo set: Cleo with a favorite object, Cleo with party decor, Cleo with food or cake nearby, and Cleo with a guest making her smile.
+                </li>
+                <li>
+                  <strong>The First Birthday Field Notes</strong>
+                  Submit a five-photo set documenting the party from a baby's-eye view: something colorful, something loud, something sweet, someone laughing, and Cleo being celebrated.
+                </li>
+                <li>
+                  <strong>The Birthday Chorus</strong>
+                  Gather at least six guests for a photo or short video where everyone is doing the same birthday pose, cheer, or gesture. At least two people must be from outside the team's original social circle.
+                </li>
+                <li>
+                  <strong>The Grand Assembly</strong>
+                  Gather at least eight guests for one photo. The group must include someone who met Cleo before today, someone who met her today, someone younger than 10 if present, and someone older than 60 if present.
+                </li>
+              </ol>
+            </div>
+
+            <div class="stage">
+              <h3>Shared Final Quest, Slot 10</h3>
+              <p class="stage-note">Every team receives this same quest so the parents get a complete advice archive no matter how randomization shakes out.</p>
+              <ol class="quest-list">
+                <li>
+                  <strong>The Future Advice Council</strong>
+                  Collect advice for future Cleo from five guests across different ages or life stages. Submit a team photo with at least three of them and write the five advice lines in the caption.
+                </li>
+              </ol>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="two-col">
+        <article class="card">
+          <h2>Scoring</h2>
+          <ul>
+            <li>Each completed quest is worth 1 point.</li>
+            <li>There are 10 possible points.</li>
+            <li>No partial credit: a quest is either complete or incomplete.</li>
+            <li>Teams can compare scores cleanly because every team receives 10 total quests with the same difficulty structure.</li>
+            <li>The host can review unclear submissions before announcing the winner.</li>
+            <li>Tiebreaker: earliest final valid submission wins.</li>
+          </ul>
+          <p>
+            Subjective awards can still happen after the game, but they should not affect the score.
+          </p>
+        </article>
+
+        <article class="card">
+          <h2>Team Name Direction</h2>
+          <p>
+            Team names should feel festive without requiring inside jokes. The generator can combine a birthday adjective with a noun.
+          </p>
+          <ul>
+            <li>Giggle Squad</li>
+            <li>Cake Crew</li>
+            <li>Party Sprouts</li>
+            <li>Confetti Club</li>
+            <li>Tiny Champions</li>
+            <li>Balloon Brigade</li>
+            <li>Snack Patrol</li>
+            <li>Candle Crew</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="two-col">
+        <article class="card">
+          <h2>First App Requirements</h2>
+          <ol>
+            <li>Host creates an event and chooses game duration.</li>
+            <li>App generates a guest join QR code.</li>
+            <li>Guests join without accounts.</li>
+            <li>Guests are assigned automatically to balanced teams.</li>
+            <li>Each team sees its randomized 10-quest board, 60-minute timer, and completed quest count.</li>
+            <li>The quest generator randomly assigns one quest from each pair for slots 1-9 and assigns The Future Advice Council to slot 10 for every team.</li>
+            <li>Guests upload photos or short videos as proof.</li>
+            <li>Host can approve, reject, or feature submissions if needed.</li>
+            <li>Host can end the game and view winners.</li>
+            <li>Parents can download all media and captions after the party.</li>
+          </ol>
+        </article>
+
+        <article class="card questions">
+          <h2>Open Product Questions</h2>
+          <ul>
+            <li>Should submissions be team-wide or individual-within-team?</li>
+            <li>Should photos appear on a live party display, or only in the parent gallery?</li>
+            <li>Do we want manual host approval during the game, or trust guests and review later?</li>
+            <li>How many guests are expected, and what is the target team size?</li>
+            <li>Should late-arriving guests be added to existing teams or form a new team?</li>
+            <li>Should every quest require host approval, or only quests flagged by another team?</li>
+          </ul>
+        </article>
+      </section>
+
+      <section>
+        <article class="card">
+          <h2>Recommended MVP</h2>
+          <p>
+            Build the first version around a single event, QR-based guest join, automatic team assignment, a 60-minute countdown, staged quest randomization, photo and video uploads, completed-quest scoring, and a final parent gallery export.
+          </p>
+          <p>
+            The experience should be optimized for quick participation at a real party: big buttons, minimal typing, forgiving uploads, and clear feedback when a quest is submitted.
+          </p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
