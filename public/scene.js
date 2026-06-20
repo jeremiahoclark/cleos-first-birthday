@@ -18,33 +18,32 @@ function createBubbleMaterial() {
   return new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.22,
-    roughness: 0.05,
-    metalness: 0.05,
-    transmission: 0.85,
-    thickness: 0.8,
-    ior: 1.15,
-    envMapIntensity: 1.2,
-    clearcoat: 1,
-    clearcoatRoughness: 0.1
+    opacity: 0.35,
+    roughness: 0.08,
+    metalness: 0.02,
+    transmission: 0.92,
+    thickness: 0.6,
+    ior: 1.12,
+    clearcoat: 0.8,
+    clearcoatRoughness: 0.15
   });
 }
 
 function initLights(targetScene) {
-  const ambient = new THREE.AmbientLight(0x6ec8ff, 0.45);
+  const ambient = new THREE.AmbientLight(0xffe8f2, 0.75);
   targetScene.add(ambient);
 
-  const key = new THREE.DirectionalLight(0xffd6f0, 0.85);
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
   key.position.set(4, 8, 6);
   targetScene.add(key);
 
-  const rim = new THREE.PointLight(0x4ecdc4, 1.4, 40);
+  const rim = new THREE.PointLight(0xffb8d0, 0.8, 40);
   rim.position.set(-6, 2, -4);
   targetScene.add(rim);
 
-  const gold = new THREE.PointLight(0xffd166, 0.9, 30);
-  gold.position.set(5, -3, 2);
-  targetScene.add(gold);
+  const soft = new THREE.PointLight(0xc9d8ff, 0.6, 30);
+  soft.position.set(5, -3, 2);
+  targetScene.add(soft);
 }
 
 function buildBubbles(targetScene) {
@@ -90,10 +89,10 @@ function buildParticles(targetScene) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const material = new THREE.PointsMaterial({
-    color: 0xb8f0ff,
-    size: 0.06,
+    color: 0xffd6ec,
+    size: 0.05,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.4,
     depthWrite: false
   });
   const points = new THREE.Points(geometry, material);
@@ -164,7 +163,7 @@ export function initScene(canvas) {
   onResize(canvas);
 
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x061220, 0.045);
+  scene.fog = new THREE.FogExp2(0xfff5fa, 0.028);
 
   camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 80);
   camera.position.set(0, 0, 14);

@@ -1,0 +1,25 @@
+- main [ref=e2]:
+  - generic [ref=e44]:
+    - generic [ref=e45]: Beta dry run
+    - generic [ref=e46]: ✦ 0/10
+  - generic [ref=e47]:
+    - button "← Back" [ref=e48] [cursor=pointer]
+    - paragraph [ref=e49]: Treasure 1
+    - heading "The Cleo Coalition" [level=2] [ref=e50]
+    - paragraph [ref=e51]: Submit one photo with Cleo, one parent, and at least one person who had not met someone else in the photo before today.
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - button "Open camera" [ref=e55] [cursor=pointer]:
+          - img [ref=e56]
+        - generic "Upload photo" [ref=e59] [cursor=pointer]:
+          - generic [ref=e60]: +
+      - generic [ref=e61]:
+        - generic [ref=e62]:
+          - generic [ref=e63]: Caption
+          - textbox "Caption" [ref=e64]:
+            - /placeholder: Who's in this?
+        - generic [ref=e65]:
+          - generic [ref=e66]: Everyone's first names
+          - textbox "Everyone's first names" [ref=e67]:
+            - /placeholder: ""
+      - button "Lock in treasure" [disabled] [ref=e68]

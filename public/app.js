@@ -102,7 +102,7 @@ function showToast(message, dramatic = false) {
 }
 
 function burstConfetti() {
-  const colors = ["#ffd166", "#ff6b9d", "#4ecdc4", "#a78bfa", "#ffb703"];
+  const colors = ["#ff8fab", "#b8a9ff", "#ffc857", "#7ed4b8", "#c9b8ff"];
   for (let i = 0; i < 26; i += 1) {
     const piece = document.createElement("span");
     piece.className = "confetti";
@@ -187,8 +187,8 @@ function timerMarkup() {
         <svg viewBox="0 0 72 72" aria-hidden="true">
           <defs>
             <linearGradient id="timer-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#ffd166"/>
-              <stop offset="100%" stop-color="#ff6b9d"/>
+              <stop offset="0%" stop-color="#ff8fab"/>
+              <stop offset="100%" stop-color="#b8a9ff"/>
             </linearGradient>
           </defs>
           <circle class="track" cx="36" cy="36" r="30"/>
@@ -373,90 +373,74 @@ function stopCamera() {
   }
 }
 
+const CAMERA_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+
+function compactField(label, name, placeholder = "") {
+  return `
+    <label class="field-compact">
+      <span class="field-ask">${escapeHtml(label)}</span>
+      <input class="input-compact" name="${name}" placeholder="${escapeHtml(placeholder)}" required>
+    </label>
+  `;
+}
+
 function renderCamera(slot) {
   const quest = state.team.quests.find((item) => Number(item.slot) === Number(slot));
   const isVideoQuest = quest.mediaType === "video";
   const allowMultiple = quest.composition === "collage";
-  const shots = []; // captured/uploaded image data URLs (for photo quests)
-  let composed = null; // { canvas, dataUrl }
-  let videoDataUrl = ""; // raw data URL for video quests
+  const shots = [];
+  let composed = null;
+  let videoDataUrl = "";
 
   app.innerHTML = `
     ${topbar()}
     <section class="panel panel-pad stack capture-screen">
-      <button class="btn btn-ghost" data-back>← Back to map</button>
-      <div>
-        <p class="kicker">Treasure ${quest.slot}</p>
-        <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
-        <p class="lead">${escapeHtml(quest.prompt)}</p>
-      </div>
+      <button class="btn btn-ghost" type="button" data-back>← Back</button>
+      <p class="kicker">Treasure ${quest.slot}</p>
+      <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
+      <p class="lead">${escapeHtml(quest.prompt)}</p>
 
       <form id="submission-form" class="stack">
         ${
           isVideoQuest
             ? `
-          <label class="field">
-            <span>Record or upload a video</span>
-            <input class="file-input" name="media" type="file" accept="video/*" capture="environment" required>
-          </label>
-          <video class="preview" data-video-preview controls playsinline hidden></video>
+          <div class="capture-hero">
+            <div class="capture-frame">
+              <button type="button" class="cam-big" data-video-cam aria-label="Record video">${CAMERA_ICON}</button>
+              <video class="preview show" data-video-preview controls playsinline hidden></video>
+            </div>
+            <label class="upload-plus" aria-label="Upload video">
+              <input type="file" name="media" accept="video/*">
+              <span>+</span>
+            </label>
+            <input type="file" data-video-capture accept="video/*" capture="environment" hidden>
+          </div>
         `
             : `
-          <div class="capture-stage">
-            <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
-            <div class="button-row">
-              <button class="btn btn-primary" type="button" data-start-cam>Open camera</button>
-              <button class="btn btn-secondary" type="button" data-shutter hidden>Snap${allowMultiple ? " photo" : ""}</button>
-              <button class="btn btn-ghost" type="button" data-stop-cam hidden>Stop</button>
+          <div class="capture-hero">
+            <div class="capture-frame" data-capture-frame>
+              <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
+              <button type="button" class="cam-big" data-cam-btn aria-label="Open camera">${CAMERA_ICON}</button>
             </div>
-            <label class="field">
-              <span>Or upload from your phone${allowMultiple ? " (pick several)" : ""}</span>
-              <input class="file-input" name="upload" type="file" accept="image/*" capture="environment" ${allowMultiple ? "multiple" : ""}>
+            <label class="upload-plus" aria-label="Upload photo">
+              <input type="file" name="upload" accept="image/*" ${allowMultiple ? "multiple" : ""}>
+              <span>+</span>
             </label>
             <div class="thumb-row" data-thumbs></div>
           </div>
+          <select name="compositionMode" hidden aria-hidden="true">
+            <option value="${quest.composition}" selected>${escapeHtml(layoutLabel(quest.composition))}</option>
+          </select>
+          <img data-composed alt="" hidden>
         `
         }
 
-        <div class="capture-details" data-capture-details hidden>
-        <label class="field">
-          <span>Caption</span>
-          <textarea class="textarea" name="caption" placeholder="Who is in this? What should the parents know?" required></textarea>
-        </label>
-        ${quest.requiredFields
-          .map(
-            (field, index) => `
-              <label class="field">
-                <span>${escapeHtml(field)}</span>
-                <input class="input" name="required-${index}" required>
-              </label>
-            `
-          )
-          .join("")}
-        ${
-          isVideoQuest
-            ? ""
-            : `
-        <div class="composed-wrap" data-composed-wrap hidden>
-          <p class="kicker">Preview</p>
-          <img class="preview show" data-composed alt="Composed proof preview">
+        <div class="capture-fields">
+          ${compactField("Caption", "caption", "Who's in this?")}
+          ${quest.requiredFields.map((field, index) => compactField(field, `required-${index}`)).join("")}
         </div>
-        <details class="details-advanced">
-          <summary>Photo layout</summary>
-          <div class="details-body">
-            <select class="select" name="compositionMode">
-              <option value="${quest.composition}">Recommended: ${layoutLabel(quest.composition)}</option>
-              <option value="caption">Caption at bottom</option>
-              <option value="side-by-side">Side-by-side reference</option>
-              <option value="collage">Collage / set</option>
-              <option value="plain">Plain proof</option>
-            </select>
-          </div>
-        </details>
-        `
-        }
-        <button class="btn btn-primary btn-full" type="submit" data-submit ${isVideoQuest ? "" : "disabled"}>Lock in treasure</button>
-        </div>
+
+        <button class="btn btn-primary btn-full" type="submit" data-submit ${isVideoQuest ? "disabled" : "disabled"}>Lock in treasure</button>
       </form>
     </section>
   `;
@@ -471,35 +455,23 @@ function renderCamera(slot) {
   const submitBtn = document.querySelector("[data-submit]");
   const compositionSelect = document.querySelector("[name='compositionMode']");
   const captionEl = document.querySelector("[name='caption']");
-  const detailsPanel = document.querySelector("[data-capture-details]");
-
-  function revealDetails() {
-    if (!detailsPanel || !detailsPanel.hidden) return;
-    detailsPanel.hidden = false;
-    detailsPanel.classList.add("capture-details--reveal");
-  }
 
   async function rebuildPreview() {
     if (isVideoQuest) return;
-    const wrap = document.querySelector("[data-composed-wrap]");
     if (!shots.length) {
-      wrap.hidden = true;
       composed = null;
       submitBtn.disabled = true;
       return;
     }
     const images = await Promise.all(shots.map(loadImage));
     composed = composeProof({
-      mode: compositionSelect.value,
+      mode: compositionSelect?.value || quest.composition,
       images,
       caption: captionEl.value,
       title: quest.title,
       reference: quest.prompt
     });
-    document.querySelector("[data-composed]").src = composed.dataUrl;
-    wrap.hidden = false;
     submitBtn.disabled = false;
-    revealDetails();
   }
 
   function addShot(dataUrl) {
@@ -507,14 +479,16 @@ function renderCamera(slot) {
     shots.push(dataUrl);
     renderThumbs();
     rebuildPreview();
-    revealDetails();
   }
 
   function renderThumbs() {
     const row = document.querySelector("[data-thumbs]");
     if (!row) return;
     row.innerHTML = shots
-      .map((src, i) => `<div class="thumb"><img src="${src}" alt="shot ${i + 1}"><button type="button" data-remove="${i}">×</button></div>`)
+      .map(
+        (src, i) =>
+          `<div class="thumb"><img src="${src}" alt="shot ${i + 1}"><button type="button" data-remove="${i}">×</button></div>`
+      )
       .join("");
     row.querySelectorAll("[data-remove]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -527,18 +501,23 @@ function renderCamera(slot) {
 
   if (isVideoQuest) {
     const fileInput = document.querySelector("[name='media']");
+    const captureInput = document.querySelector("[data-video-capture]");
     const videoPreview = document.querySelector("[data-video-preview]");
-    fileInput.addEventListener("change", async () => {
-      const file = fileInput.files?.[0];
+    const videoCam = document.querySelector("[data-video-cam]");
+
+    async function onVideoFile(file) {
       if (!file) return;
       videoPreview.src = URL.createObjectURL(file);
       videoPreview.hidden = false;
       videoDataUrl = file.size < 4_000_000 ? await fileToDataUrl(file) : "";
-      revealDetails();
-    });
+      submitBtn.disabled = false;
+    }
+
+    videoCam.addEventListener("click", () => captureInput.click());
+    captureInput.addEventListener("change", async () => onVideoFile(captureInput.files?.[0]));
+    fileInput.addEventListener("change", async () => onVideoFile(fileInput.files?.[0]));
   } else {
     captionEl.addEventListener("input", rebuildPreview);
-    compositionSelect.addEventListener("change", rebuildPreview);
 
     const uploadInput = document.querySelector("[name='upload']");
     uploadInput.addEventListener("change", async () => {
@@ -548,11 +527,25 @@ function renderCamera(slot) {
     });
 
     const feed = document.querySelector("[data-feed]");
-    const startBtn = document.querySelector("[data-start-cam]");
-    const shutter = document.querySelector("[data-shutter]");
-    const stopBtn = document.querySelector("[data-stop-cam]");
+    const frame = document.querySelector("[data-capture-frame]");
+    const camBtn = document.querySelector("[data-cam-btn]");
 
-    startBtn.addEventListener("click", async () => {
+    camBtn.addEventListener("click", async () => {
+      if (cameraStream) {
+        const canvas = document.createElement("canvas");
+        canvas.width = feed.videoWidth || 1080;
+        canvas.height = feed.videoHeight || 1440;
+        canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
+        addShot(canvas.toDataURL("image/jpeg", 0.85));
+        stopCamera();
+        feed.hidden = true;
+        frame.classList.remove("capture-frame--live");
+        camBtn.classList.remove("cam-big--live");
+        camBtn.innerHTML = CAMERA_ICON;
+        camBtn.setAttribute("aria-label", "Retake photo");
+        return;
+      }
+
       try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
@@ -560,37 +553,13 @@ function renderCamera(slot) {
         });
         feed.srcObject = cameraStream;
         feed.hidden = false;
-        shutter.hidden = false;
-        stopBtn.hidden = false;
-        startBtn.hidden = true;
+        frame.classList.add("capture-frame--live");
+        camBtn.classList.add("cam-big--live");
+        camBtn.innerHTML = "";
+        camBtn.setAttribute("aria-label", "Take photo");
       } catch {
-        showToast("Camera unavailable — use upload instead.");
-        startBtn.hidden = true;
+        showToast("Camera unavailable — tap + to upload.");
       }
-    });
-
-    shutter.addEventListener("click", () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = feed.videoWidth || 1080;
-      canvas.height = feed.videoHeight || 1440;
-      canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
-      addShot(canvas.toDataURL("image/jpeg", 0.85));
-      if (!allowMultiple) {
-        stopCamera();
-        feed.hidden = true;
-        shutter.hidden = true;
-        stopBtn.hidden = true;
-        startBtn.hidden = false;
-        startBtn.textContent = "Retake";
-      }
-    });
-
-    stopBtn.addEventListener("click", () => {
-      stopCamera();
-      feed.hidden = true;
-      shutter.hidden = true;
-      stopBtn.hidden = true;
-      startBtn.hidden = false;
     });
   }
 
@@ -613,7 +582,7 @@ function renderCamera(slot) {
       }
       // keep the data URL small enough for a demo payload
       mediaDataUrl = composed.dataUrl.length < 1_400_000 ? composed.dataUrl : "";
-      compositionMode = compositionSelect.value;
+      compositionMode = compositionSelect?.value || quest.composition;
     }
 
     const payload = {
