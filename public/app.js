@@ -17,6 +17,7 @@ const affirmations = [
 const state = loadState();
 let status = null;
 let timerHandle = null;
+let activeQuestSlot = 1;
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -83,8 +84,8 @@ function makeBubbles() {
 }
 
 function topbar() {
-  const dry = status?.dryRun ? `<span class="dry-pill">Beta dry mode</span>` : `<span class="status-pill">Live mode</span>`;
-  const score = `<span class="score-pill">${completedCount()} / 10 complete</span>`;
+  const dry = status?.dryRun ? `<span class="dry-pill">Dry mode</span>` : `<span class="status-pill">Live</span>`;
+  const score = `<span class="score-pill">${completedCount()}/10</span>`;
   return `<div class="topbar">${dry}${state.user ? score : ""}</div>`;
 }
 
@@ -182,9 +183,15 @@ function timerMarkup() {
   const duration = status?.event?.durationSeconds || 3600;
   const progress = Math.round(((duration - remaining) / duration) * 100);
   return `
-    <section class="panel timer-card" data-timer-card>
-      <div class="quest-meta"><span>${escapeHtml(state.team.name)}</span><span>60 minute round</span></div>
-      <div class="timer" data-timer>${formatTime(remaining)}</div>
+    <section class="game-header" data-timer-card>
+      <div>
+        <p class="eyebrow">Active round</p>
+        <strong>${escapeHtml(state.team.name)}</strong>
+      </div>
+      <div class="timer-block">
+        <span>60 min</span>
+        <div class="timer" data-timer>${formatTime(remaining)}</div>
+      </div>
       <div class="progress-track"><div class="progress-fill" data-progress style="--progress: ${progress}%"></div></div>
       <div class="urgency-banner" data-urgency hidden></div>
     </section>
@@ -201,24 +208,59 @@ function isComplete(slot) {
   return state.submissions.some((submission) => Number(submission.questSlot) === Number(slot));
 }
 
-function questCard(quest) {
+function nextOpenQuestSlot(quests) {
+  return quests.find((quest) => !isComplete(quest.slot))?.slot || quests[0]?.slot || 1;
+}
+
+function progressNav(quests) {
+  return `
+    <div class="quest-dots" aria-label="Quest progress">
+      ${quests
+        .map(
+          (quest) => `
+            <button
+              class="quest-dot ${quest.slot === activeQuestSlot ? "active" : ""} ${isComplete(quest.slot) ? "done" : ""}"
+              type="button"
+              data-jump-slot="${quest.slot}"
+              aria-label="Quest ${quest.slot}${isComplete(quest.slot) ? " complete" : ""}"
+            >${quest.slot}</button>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function activeQuestView(quest, quests) {
   const complete = isComplete(quest.slot);
   const requirements = quest.requiredFields.map((field) => `<div><strong>Need:</strong> ${escapeHtml(field)}</div>`).join("");
+  const previous = quest.slot > 1 ? quest.slot - 1 : quests.length;
+  const next = quest.slot < quests.length ? quest.slot + 1 : 1;
   return `
-    <article class="quest-card ${complete ? "complete" : ""}" id="quest-${quest.slot}">
-      <div class="quest-meta">
-        <span>Quest ${quest.slot} · ${escapeHtml(quest.stageName)}</span>
-        <span>${complete ? "Complete" : "1 point"}</span>
+    <section class="objective-shell ${complete ? "complete" : ""}" id="quest-${quest.slot}">
+      <div class="objective-meta">
+        <span>Quest ${quest.slot} of ${quests.length}</span>
+        <span>${escapeHtml(quest.stageName)}</span>
       </div>
-      <h2 class="quest-title">${escapeHtml(quest.title)}</h2>
+      <h1 class="objective-title">${escapeHtml(quest.title)}</h1>
       <p class="quest-prompt">${escapeHtml(quest.prompt)}</p>
       <div class="requirements">${requirements}</div>
       ${
         complete
-          ? `<p class="muted">Submitted. This quest is locked in for your team.</p>`
-          : `<button class="btn full" data-open-camera="${quest.slot}">Camera mode</button>`
+          ? `
+            <div class="complete-state">
+              <strong>Locked in for your team.</strong>
+              <span>This quest counts. Keep the momentum going.</span>
+            </div>
+            <button class="btn full" data-next-open>Next open quest</button>
+          `
+          : `<button class="btn full camera-cta" data-open-camera="${quest.slot}">Camera mode</button>`
       }
-    </article>
+      <div class="objective-nav">
+        <button class="btn ghost" type="button" data-jump-slot="${previous}">Previous</button>
+        <button class="btn secondary" type="button" data-jump-slot="${next}">Next</button>
+      </div>
+    </section>
   `;
 }
 
@@ -226,21 +268,25 @@ function renderGame() {
   stopCamera();
   clearInterval(timerHandle);
   const quests = state.team.quests || status.quests;
+  if (!quests.some((quest) => Number(quest.slot) === Number(activeQuestSlot))) {
+    activeQuestSlot = nextOpenQuestSlot(quests);
+  }
+  const activeQuest = quests.find((quest) => Number(quest.slot) === Number(activeQuestSlot)) || quests[0];
   app.innerHTML = `
     ${topbar()}
-    <div class="stack">
+    <div class="game-flow">
       ${timerMarkup()}
-      <section class="screen-card">
-        <p class="eyebrow">Your team</p>
-        <h1>${escapeHtml(state.team.name)}</h1>
-        <p class="big-copy">Complete full quests only. Partial progress does not score.</p>
-        <div class="button-row hero-actions">
-          <button class="btn secondary" data-view-admin>Host view</button>
-          <button class="btn ghost" data-reset>Reset this phone</button>
+      <section class="quest-control">
+        <div>
+          <p class="eyebrow">One objective at a time</p>
+          <strong>${completedCount()} complete · ${10 - completedCount()} to go</strong>
         </div>
+        <button class="mini-link" data-view-admin>Host</button>
       </section>
-      ${quests.map(questCard).join("")}
+      ${progressNav(quests)}
+      ${activeQuestView(activeQuest, quests)}
       ${feedbackMarkup()}
+      <button class="mini-link reset-link" data-reset>Reset this phone</button>
     </div>
   `;
   bindGameEvents();
@@ -291,6 +337,16 @@ function updateTimer() {
 function bindGameEvents() {
   document.querySelectorAll("[data-open-camera]").forEach((button) => {
     button.addEventListener("click", () => renderCamera(Number(button.dataset.openCamera)));
+  });
+  document.querySelectorAll("[data-jump-slot]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeQuestSlot = Number(button.dataset.jumpSlot);
+      renderGame();
+    });
+  });
+  document.querySelector("[data-next-open]")?.addEventListener("click", () => {
+    activeQuestSlot = nextOpenQuestSlot(state.team.quests || status.quests);
+    renderGame();
   });
   document.querySelector("[data-view-admin]")?.addEventListener("click", renderAdmin);
   document.querySelector("[data-reset]")?.addEventListener("click", () => {
@@ -553,6 +609,7 @@ function renderCamera(slot) {
     // Persist metadata only — composed data URLs are too large for localStorage.
     const { mediaDataUrl: _omit, ...lean } = result.submission;
     state.submissions.push(lean);
+    activeQuestSlot = nextOpenQuestSlot(state.team.quests || status.quests);
     saveState();
     showToast(affirmations[Math.floor(Math.random() * affirmations.length)], Math.random() > 0.35);
     renderGame();

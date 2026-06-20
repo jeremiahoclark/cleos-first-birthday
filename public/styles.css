@@ -261,14 +261,48 @@ h3 {
   margin-top: 18px;
 }
 
-.timer-card {
+.game-flow {
   display: grid;
-  gap: 8px;
-  padding: 16px;
+  gap: 12px;
+}
+
+.game-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(191, 219, 254, 0.78);
+  box-shadow: 0 12px 34px rgba(79, 70, 229, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.game-header .eyebrow {
+  margin-bottom: 3px;
+  font-size: 0.68rem;
+}
+
+.game-header strong {
+  display: block;
+  color: #334155;
+  font-size: 1.05rem;
+}
+
+.timer-block {
+  text-align: right;
+}
+
+.timer-block span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 900;
 }
 
 .timer {
-  font-size: 2.45rem;
+  font-size: 1.85rem;
   line-height: 1;
   font-weight: 950;
   color: transparent;
@@ -278,6 +312,7 @@ h3 {
 }
 
 .progress-track {
+  grid-column: 1 / -1;
   height: 12px;
   overflow: hidden;
   border-radius: 999px;
@@ -292,25 +327,120 @@ h3 {
   transition: width 400ms ease;
 }
 
-.quest-card {
+.quest-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 0;
+}
+
+.quest-control strong {
+  display: block;
+  color: #334155;
+  font-size: 1.04rem;
+}
+
+.mini-link {
+  min-height: 42px;
+  padding: 9px 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid #c7d2fe;
+  color: var(--indigo);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.reset-link {
+  justify-self: center;
+  margin: 2px 0 6px;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.quest-dots {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+}
+
+.quest-dots::-webkit-scrollbar {
+  display: none;
+}
+
+.quest-dot {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid #c7d2fe;
+  color: #475569;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.quest-dot.active {
+  color: white;
+  background: linear-gradient(90deg, var(--sky), var(--indigo));
+  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.26);
+}
+
+.quest-dot.done {
+  color: white;
+  background: var(--good);
+  border-color: rgba(16, 185, 129, 0.7);
+}
+
+.objective-shell {
   position: relative;
+  display: grid;
+  gap: 16px;
+  min-height: 52vh;
+  padding: 22px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(191, 219, 254, 0.88);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
   overflow: hidden;
-  padding: 18px;
 }
 
-.quest-card.complete {
-  border-color: rgba(16, 185, 129, 0.6);
-  background: rgba(240, 253, 244, 0.9);
+.objective-shell::before {
+  content: "";
+  position: absolute;
+  inset: -80px -80px auto auto;
+  width: 180px;
+  height: 180px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.18), transparent 66%);
+  pointer-events: none;
 }
 
-.quest-meta {
+.objective-shell.complete {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: linear-gradient(145deg, rgba(240, 253, 244, 0.94), rgba(255, 255, 255, 0.86));
+}
+
+.objective-meta {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
   color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 800;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.objective-title {
+  margin-bottom: 0;
+  font-size: clamp(2.15rem, 11vw, 4.4rem);
+  overflow-wrap: anywhere;
 }
 
 .quest-title {
@@ -319,23 +449,50 @@ h3 {
 }
 
 .quest-prompt {
-  margin-bottom: 12px;
+  margin-bottom: 0;
   color: #334155;
-  font-size: 1.02rem;
+  font-size: clamp(1.1rem, 4.7vw, 1.42rem);
+  line-height: 1.25;
 }
 
 .requirements {
   display: grid;
   gap: 6px;
-  padding: 12px;
-  border-radius: 16px;
+  padding: 14px;
+  border-radius: 20px;
   background: rgba(239, 246, 255, 0.86);
   color: #334155;
-  font-size: 0.94rem;
+  font-size: 1rem;
 }
 
 .requirements strong {
   color: var(--indigo);
+}
+
+.camera-cta {
+  min-height: 68px;
+  border-radius: 24px;
+  font-size: 1.16rem;
+}
+
+.complete-state {
+  display: grid;
+  gap: 4px;
+  padding: 15px;
+  border-radius: 20px;
+  background: rgba(220, 252, 231, 0.86);
+  color: #166534;
+}
+
+.complete-state strong {
+  font-size: 1.1rem;
+}
+
+.objective-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: auto;
 }
 
 .camera-panel {
@@ -533,12 +690,12 @@ video.preview[hidden] {
   color: #dc2626;
 }
 
-.timer-card.final-push {
+.game-header.final-push {
   border-color: rgba(239, 68, 68, 0.55);
   animation: pulse-push 1.4s ease-in-out infinite;
 }
 
-.timer-card.final-push .timer {
+.game-header.final-push .timer {
   background: linear-gradient(90deg, var(--amber), var(--danger));
   -webkit-background-clip: text;
   background-clip: text;
