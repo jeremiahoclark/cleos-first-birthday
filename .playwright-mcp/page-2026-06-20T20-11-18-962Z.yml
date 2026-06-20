@@ -1,0 +1,37 @@
+- main [ref=e2]:
+  - generic [ref=e61]:
+    - generic [ref=e62]: Beta dry run
+    - generic [ref=e63]: ✦ 0/10
+  - generic [ref=e64]:
+    - button "← Back to map" [ref=e65] [cursor=pointer]
+    - generic [ref=e66]:
+      - paragraph [ref=e67]: Treasure 1
+      - heading "The Cleo Coalition" [level=2] [ref=e68]
+      - paragraph [ref=e69]: Submit one photo with Cleo, one parent, and at least one person who had not met someone else in the photo before today.
+    - generic [ref=e70]:
+      - generic [ref=e71]:
+        - generic [ref=e72]:
+          - button "Open camera" [ref=e73] [cursor=pointer]
+          - button "Snap" [ref=e74] [cursor=pointer]
+          - button "Stop" [ref=e75] [cursor=pointer]
+        - generic [ref=e76]:
+          - generic [ref=e77]: Or upload from your phone
+          - button "Or upload from your phone" [ref=e78]
+      - generic [ref=e79]:
+        - generic [ref=e80]: Caption
+        - textbox "Caption" [ref=e81]:
+          - /placeholder: Who is in this? What should the parents know?
+      - generic [ref=e82]:
+        - generic [ref=e83]: Everyone's first names
+        - textbox "Everyone's first names" [ref=e84]
+      - generic [ref=e85]:
+        - paragraph [ref=e86]: Preview
+        - img "Composed proof preview" [ref=e87]
+      - group [ref=e88]:
+        - generic "Photo layout ＋" [ref=e89] [cursor=pointer]
+        - 'option "Recommended: Caption at bottom" [selected]'
+        - option "Caption at bottom"
+        - option "Side-by-side reference"
+        - option "Collage / set"
+        - option "Plain proof"
+      - button "Lock in treasure" [disabled] [ref=e90]

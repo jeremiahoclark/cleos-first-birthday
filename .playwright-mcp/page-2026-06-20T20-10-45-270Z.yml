@@ -1,0 +1,45 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e19]:
+      - generic [ref=e20]: Beta dry run
+      - generic [ref=e21]: ✦ 0/10
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - paragraph [ref=e24]: Your crew
+        - generic [ref=e25]: Rainbow Squad
+      - generic "Time remaining" [ref=e26]:
+        - img [ref=e27]
+        - generic [ref=e30]: 59:59
+    - generic "Treasure trail — 10 quests" [ref=e31]:
+      - button "Treasure 1" [ref=e32] [cursor=pointer]: "1"
+      - button "Treasure 2" [ref=e33] [cursor=pointer]: "2"
+      - button "Treasure 3" [ref=e34] [cursor=pointer]: "3"
+      - button "Treasure 4" [ref=e35] [cursor=pointer]: "4"
+      - button "Treasure 5" [ref=e36] [cursor=pointer]: "5"
+      - button "Treasure 6" [ref=e37] [cursor=pointer]: "6"
+      - button "Treasure 7" [ref=e38] [cursor=pointer]: "7"
+      - button "Treasure 8" [ref=e39] [cursor=pointer]: "8"
+      - button "Treasure 9" [ref=e40] [cursor=pointer]: "9"
+      - button "Treasure 10" [ref=e41] [cursor=pointer]: "10"
+    - generic [ref=e42]:
+      - generic [ref=e43]:
+        - generic [ref=e44]: Treasure 1 / 10
+        - generic [ref=e45]: Warm-Up Quests
+      - heading "The Cleo Coalition" [level=2] [ref=e46]
+      - paragraph [ref=e47]: Submit one photo with Cleo, one parent, and at least one person who had not met someone else in the photo before today.
+      - generic [ref=e49]: ◇ Everyone's first names
+      - generic [ref=e50]:
+        - button "📷 Capture proof" [ref=e51] [cursor=pointer]
+        - generic [ref=e52]:
+          - button "← Prev" [ref=e53] [cursor=pointer]
+          - button "Next →" [ref=e54] [cursor=pointer]
+    - group [ref=e55]:
+      - generic "Beta notes (0)" [ref=e56] [cursor=pointer]
+      - option "Prompt idea" [selected]
+      - option "UI feedback"
+      - option "Bug"
+      - option "Party idea"
+    - generic [ref=e57]:
+      - button "Host view" [ref=e58] [cursor=pointer]
+      - button "Reset phone" [ref=e59] [cursor=pointer]
+  - generic [ref=e60]: Welcome to Rainbow Squad.

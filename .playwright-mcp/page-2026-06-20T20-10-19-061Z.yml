@@ -1,0 +1,18 @@
+- main [ref=e2]:
+  - generic [ref=e4]: Beta dry run
+  - generic [ref=e5]:
+    - generic [ref=e6]: 🫧 Treasure hunt · 60 minutes
+    - paragraph [ref=e7]: Cleo's First Birthday
+    - heading "Bubble Quest" [level=1] [ref=e8]
+    - paragraph [ref=e9]: Get a random crew, chase 10 photo treasures, meet everyone, and fill Cleo's birthday archive.
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]: Your real name
+        - textbox "Your real name" [ref=e13]:
+          - /placeholder: Jeremiah Clark
+      - generic [ref=e14]:
+        - generic [ref=e15]: Party nickname
+        - textbox "Party nickname" [ref=e16]:
+          - /placeholder: Uncle J
+      - button "Start the hunt" [ref=e17] [cursor=pointer]
+    - paragraph [ref=e18]: "No login — this phone remembers you. Dry mode: nothing hits Cloudflare."

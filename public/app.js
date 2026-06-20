@@ -1,7 +1,8 @@
 import { composeProof, loadImage } from "/compose.js";
+import { initScene } from "/scene.js";
 
 const app = document.querySelector("#app");
-const bubbleField = document.querySelector(".bubble-field");
+const gameBg = document.querySelector("#game-bg");
 const STORAGE_KEY = "cleoQuestState:v1";
 const DEVICE_KEY = "cleoQuestDeviceId:v1";
 
@@ -65,28 +66,18 @@ async function api(path, options = {}) {
   return data;
 }
 
-function makeBubbles() {
-  bubbleField.innerHTML = "";
-  for (let i = 0; i < 34; i += 1) {
-    const bubble = document.createElement("span");
-    const size = 20 + Math.random() * 74;
-    bubble.className = "bubble";
-    bubble.style.width = `${size}px`;
-    bubble.style.height = `${size}px`;
-    bubble.style.left = `${Math.random() * 100}%`;
-    bubble.style.top = `${Math.random() * 100}%`;
-    bubble.style.setProperty("--duration", `${10 + Math.random() * 14}s`);
-    bubble.style.setProperty("--drift-x", `${Math.random() * 80 - 40}px`);
-    bubble.style.setProperty("--drift-y", `${Math.random() * -90 - 20}px`);
-    bubble.style.setProperty("--opacity", `${0.35 + Math.random() * 0.42}`);
-    bubbleField.appendChild(bubble);
-  }
+function screenEnter() {
+  app.classList.remove("screen-enter");
+  void app.offsetWidth;
+  app.classList.add("screen-enter");
 }
 
 function topbar() {
-  const dry = status?.dryRun ? `<span class="dry-pill">Dry mode</span>` : `<span class="status-pill">Live</span>`;
-  const score = `<span class="score-pill">${completedCount()}/10</span>`;
-  return `<div class="topbar">${dry}${state.user ? score : ""}</div>`;
+  const dry = status?.dryRun
+    ? `<span class="pill pill--dry">Beta dry run</span>`
+    : `<span class="pill pill--live">Live hunt</span>`;
+  const score = state.user ? `<span class="pill pill--score">${completedCount()}/10</span>` : "";
+  return `<div class="hud-bar">${dry}${score}</div>`;
 }
 
 function completedCount() {
@@ -111,7 +102,7 @@ function showToast(message, dramatic = false) {
 }
 
 function burstConfetti() {
-  const colors = ["#0ea5e9", "#4f46e5", "#ec4899", "#10b981", "#f59e0b"];
+  const colors = ["#ffd166", "#ff6b9d", "#4ecdc4", "#a78bfa", "#ffb703"];
   for (let i = 0; i < 26; i += 1) {
     const piece = document.createElement("span");
     piece.className = "confetti";
@@ -126,24 +117,26 @@ function burstConfetti() {
 function renderJoin() {
   app.innerHTML = `
     ${topbar()}
-    <section class="screen-card stack">
-      <p class="eyebrow">Cleo's First Birthday</p>
-      <h1>Team Quest</h1>
-      <p class="big-copy">Join a random team, chase 10 photo quests, meet people, and help build the birthday archive.</p>
-      <form id="join-form" class="stack">
+    <section class="panel panel-pad stack join-hero">
+      <div class="join-badge">Treasure hunt · 60 minutes</div>
+      <p class="kicker">Cleo's First Birthday</p>
+      <h1 class="title-display">Bubble Quest</h1>
+      <p class="lead">Get a random crew, chase 10 photo treasures, meet everyone, and fill Cleo's birthday archive.</p>
+      <form id="join-form" class="stack" style="text-align:left;margin-top:6px">
         <label class="field">
-          <span>Real name</span>
+          <span>Your real name</span>
           <input class="input" name="realName" autocomplete="name" placeholder="Jeremiah Clark" required>
         </label>
         <label class="field">
-          <span>Game name</span>
+          <span>Party nickname</span>
           <input class="input" name="gameName" autocomplete="nickname" placeholder="Uncle J" required>
         </label>
-        <button class="btn full" type="submit">Join the quest</button>
+        <button class="btn btn-primary btn-full" type="submit">Start the hunt</button>
       </form>
-      <p class="muted">No account. This phone gets remembered for the game. In dry mode, nothing is saved to Cloudflare storage.</p>
+      <p class="muted">No login — this phone remembers you.${status?.dryRun ? " Dry mode: nothing hits Cloudflare." : ""}</p>
     </section>
   `;
+  screenEnter();
 
   document.querySelector("#join-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -181,18 +174,31 @@ const FINAL_PUSH_SECONDS = 300; // last 5 minutes = urgency mode
 function timerMarkup() {
   const remaining = timeRemaining();
   const duration = status?.event?.durationSeconds || 3600;
-  const progress = Math.round(((duration - remaining) / duration) * 100);
+  const progress = (duration - remaining) / duration;
+  const circumference = 2 * Math.PI * 30;
+  const offset = circumference * (1 - progress);
   return `
-    <section class="game-header" data-timer-card>
+    <section class="hunt-header" data-timer-card>
       <div>
-        <p class="eyebrow">Active round</p>
-        <strong>${escapeHtml(state.team.name)}</strong>
+        <p class="kicker">Your crew</p>
+        <span class="team-name">${escapeHtml(state.team.name)}</span>
       </div>
-      <div class="timer-block">
-        <span>60 min</span>
-        <div class="timer" data-timer>${formatTime(remaining)}</div>
+      <div class="timer-ring" aria-label="Time remaining">
+        <svg viewBox="0 0 72 72" aria-hidden="true">
+          <defs>
+            <linearGradient id="timer-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffd166"/>
+              <stop offset="100%" stop-color="#ff6b9d"/>
+            </linearGradient>
+          </defs>
+          <circle class="track" cx="36" cy="36" r="30"/>
+          <circle class="fill" cx="36" cy="36" r="30"
+            stroke-dasharray="${circumference}"
+            stroke-dashoffset="${offset}"
+            data-progress-ring/>
+        </svg>
+        <span class="timer-value" data-timer>${formatTime(remaining)}</span>
       </div>
-      <div class="progress-track"><div class="progress-fill" data-progress style="--progress: ${progress}%"></div></div>
       <div class="urgency-banner" data-urgency hidden></div>
     </section>
   `;
@@ -214,16 +220,16 @@ function nextOpenQuestSlot(quests) {
 
 function progressNav(quests) {
   return `
-    <div class="quest-dots" aria-label="Quest progress">
+    <div class="treasure-trail" aria-label="Treasure trail — 10 quests">
       ${quests
         .map(
           (quest) => `
             <button
-              class="quest-dot ${quest.slot === activeQuestSlot ? "active" : ""} ${isComplete(quest.slot) ? "done" : ""}"
+              class="trail-node ${quest.slot === activeQuestSlot ? "active" : ""} ${isComplete(quest.slot) ? "done" : ""}"
               type="button"
               data-jump-slot="${quest.slot}"
-              aria-label="Quest ${quest.slot}${isComplete(quest.slot) ? " complete" : ""}"
-            >${quest.slot}</button>
+              aria-label="Treasure ${quest.slot}${isComplete(quest.slot) ? " found" : ""}"
+            >${isComplete(quest.slot) ? "" : quest.slot}</button>
           `
         )
         .join("")}
@@ -233,32 +239,36 @@ function progressNav(quests) {
 
 function activeQuestView(quest, quests) {
   const complete = isComplete(quest.slot);
-  const requirements = quest.requiredFields.map((field) => `<div><strong>Need:</strong> ${escapeHtml(field)}</div>`).join("");
+  const requirements = quest.requiredFields
+    .map((field) => `<div class="loot-item">${escapeHtml(field)}</div>`)
+    .join("");
   const previous = quest.slot > 1 ? quest.slot - 1 : quests.length;
   const next = quest.slot < quests.length ? quest.slot + 1 : 1;
   return `
-    <section class="objective-shell ${complete ? "complete" : ""}" id="quest-${quest.slot}">
-      <div class="objective-meta">
-        <span>Quest ${quest.slot} of ${quests.length}</span>
-        <span>${escapeHtml(quest.stageName)}</span>
+    <section class="panel quest-card quest-pop ${complete ? "complete" : ""}" id="quest-${quest.slot}">
+      <div class="quest-meta">
+        <span>Treasure ${quest.slot} / ${quests.length}</span>
+        <span class="stage-tag">${escapeHtml(quest.stageName)}</span>
       </div>
-      <h1 class="objective-title">${escapeHtml(quest.title)}</h1>
+      <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
       <p class="quest-prompt">${escapeHtml(quest.prompt)}</p>
-      <div class="requirements">${requirements}</div>
-      ${
-        complete
-          ? `
-            <div class="complete-state">
-              <strong>Locked in for your team.</strong>
-              <span>This quest counts. Keep the momentum going.</span>
+      <div class="loot-list">${requirements}</div>
+      <div class="quest-actions">
+        ${
+          complete
+            ? `
+            <div class="complete-badge">
+              <strong>Treasure secured!</strong>
+              <span>Logged for your crew. Keep hunting.</span>
             </div>
-            <button class="btn full" data-next-open>Next open quest</button>
+            <button class="btn btn-primary btn-full" data-next-open>Next treasure</button>
           `
-          : `<button class="btn full camera-cta" data-open-camera="${quest.slot}">Camera mode</button>`
-      }
-      <div class="objective-nav">
-        <button class="btn ghost" type="button" data-jump-slot="${previous}">Previous</button>
-        <button class="btn secondary" type="button" data-jump-slot="${next}">Next</button>
+            : `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Capture proof</button>`
+        }
+        <div class="quest-nav">
+          <button class="btn btn-ghost" type="button" data-jump-slot="${previous}">← Prev</button>
+          <button class="btn btn-secondary" type="button" data-jump-slot="${next}">Next →</button>
+        </div>
       </div>
     </section>
   `;
@@ -274,21 +284,16 @@ function renderGame() {
   const activeQuest = quests.find((quest) => Number(quest.slot) === Number(activeQuestSlot)) || quests[0];
   app.innerHTML = `
     ${topbar()}
-    <div class="game-flow">
-      ${timerMarkup()}
-      <section class="quest-control">
-        <div>
-          <p class="eyebrow">One objective at a time</p>
-          <strong>${completedCount()} complete · ${10 - completedCount()} to go</strong>
-        </div>
-        <button class="mini-link" data-view-admin>Host</button>
-      </section>
-      ${progressNav(quests)}
-      ${activeQuestView(activeQuest, quests)}
-      ${feedbackMarkup()}
-      <button class="mini-link reset-link" data-reset>Reset this phone</button>
+    ${timerMarkup()}
+    ${progressNav(quests)}
+    ${activeQuestView(activeQuest, quests)}
+    ${feedbackMarkup()}
+    <div class="hud-footer">
+      <button class="link-btn link-btn--host" data-view-admin>Host view</button>
+      <button class="link-btn" data-reset>Reset phone</button>
     </div>
   `;
+  screenEnter();
   bindGameEvents();
   timerHandle = setInterval(updateTimer, 1000);
 }
@@ -297,12 +302,14 @@ let announcedFinalPush = false;
 
 function updateTimer() {
   const timer = document.querySelector("[data-timer]");
-  const fill = document.querySelector("[data-progress]");
-  if (!timer || !fill) return;
+  const ring = document.querySelector("[data-progress-ring]");
+  if (!timer || !ring) return;
   const remaining = timeRemaining();
   const duration = status?.event?.durationSeconds || 3600;
+  const progress = (duration - remaining) / duration;
+  const circumference = 2 * Math.PI * 30;
   timer.textContent = formatTime(remaining);
-  fill.style.setProperty("--progress", `${Math.round(((duration - remaining) / duration) * 100)}%`);
+  ring.setAttribute("stroke-dashoffset", String(circumference * (1 - progress)));
 
   if (remaining <= 0) {
     clearInterval(timerHandle);
@@ -376,13 +383,15 @@ function renderCamera(slot) {
 
   app.innerHTML = `
     ${topbar()}
-    <section class="screen-card stack">
-      <button class="btn ghost" data-back>Back to quests</button>
-      <p class="eyebrow">Camera mode · Quest ${quest.slot}</p>
-      <h1>${escapeHtml(quest.title)}</h1>
-      <p class="big-copy">${escapeHtml(quest.prompt)}</p>
+    <section class="panel panel-pad stack capture-screen">
+      <button class="btn btn-ghost" data-back>← Back to map</button>
+      <div>
+        <p class="kicker">Treasure ${quest.slot}</p>
+        <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
+        <p class="lead">${escapeHtml(quest.prompt)}</p>
+      </div>
 
-      <form id="submission-form" class="camera-panel">
+      <form id="submission-form" class="stack">
         ${
           isVideoQuest
             ? `
@@ -396,9 +405,9 @@ function renderCamera(slot) {
           <div class="capture-stage">
             <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
             <div class="button-row">
-              <button class="btn" type="button" data-start-cam>📷 Open camera</button>
-              <button class="btn" type="button" data-shutter hidden>Capture${allowMultiple ? " photo" : ""}</button>
-              <button class="btn ghost" type="button" data-stop-cam hidden>Stop</button>
+              <button class="btn btn-primary" type="button" data-start-cam>Open camera</button>
+              <button class="btn btn-secondary" type="button" data-shutter hidden>Snap${allowMultiple ? " photo" : ""}</button>
+              <button class="btn btn-ghost" type="button" data-stop-cam hidden>Stop</button>
             </div>
             <label class="field">
               <span>Or upload from your phone${allowMultiple ? " (pick several)" : ""}</span>
@@ -409,6 +418,7 @@ function renderCamera(slot) {
         `
         }
 
+        <div class="capture-details" data-capture-details hidden>
         <label class="field">
           <span>Caption</span>
           <textarea class="textarea" name="caption" placeholder="Who is in this? What should the parents know?" required></textarea>
@@ -427,26 +437,30 @@ function renderCamera(slot) {
           isVideoQuest
             ? ""
             : `
-        <label class="field">
-          <span>Photo layout</span>
-          <select class="select" name="compositionMode">
-            <option value="${quest.composition}">Recommended: ${layoutLabel(quest.composition)}</option>
-            <option value="caption">Photo with caption at bottom</option>
-            <option value="side-by-side">Side-by-side reference layout</option>
-            <option value="collage">Collage / set</option>
-            <option value="plain">Plain proof photo</option>
-          </select>
-        </label>
         <div class="composed-wrap" data-composed-wrap hidden>
-          <p class="eyebrow">Preview before you submit</p>
+          <p class="kicker">Preview</p>
           <img class="preview show" data-composed alt="Composed proof preview">
         </div>
+        <details class="details-advanced">
+          <summary>Photo layout</summary>
+          <div class="details-body">
+            <select class="select" name="compositionMode">
+              <option value="${quest.composition}">Recommended: ${layoutLabel(quest.composition)}</option>
+              <option value="caption">Caption at bottom</option>
+              <option value="side-by-side">Side-by-side reference</option>
+              <option value="collage">Collage / set</option>
+              <option value="plain">Plain proof</option>
+            </select>
+          </div>
+        </details>
         `
         }
-        <button class="btn full" type="submit" data-submit ${isVideoQuest ? "" : "disabled"}>Submit complete quest</button>
+        <button class="btn btn-primary btn-full" type="submit" data-submit ${isVideoQuest ? "" : "disabled"}>Lock in treasure</button>
+        </div>
       </form>
     </section>
   `;
+  screenEnter();
 
   const back = () => {
     stopCamera();
@@ -457,6 +471,13 @@ function renderCamera(slot) {
   const submitBtn = document.querySelector("[data-submit]");
   const compositionSelect = document.querySelector("[name='compositionMode']");
   const captionEl = document.querySelector("[name='caption']");
+  const detailsPanel = document.querySelector("[data-capture-details]");
+
+  function revealDetails() {
+    if (!detailsPanel || !detailsPanel.hidden) return;
+    detailsPanel.hidden = false;
+    detailsPanel.classList.add("capture-details--reveal");
+  }
 
   async function rebuildPreview() {
     if (isVideoQuest) return;
@@ -478,6 +499,7 @@ function renderCamera(slot) {
     document.querySelector("[data-composed]").src = composed.dataUrl;
     wrap.hidden = false;
     submitBtn.disabled = false;
+    revealDetails();
   }
 
   function addShot(dataUrl) {
@@ -485,6 +507,7 @@ function renderCamera(slot) {
     shots.push(dataUrl);
     renderThumbs();
     rebuildPreview();
+    revealDetails();
   }
 
   function renderThumbs() {
@@ -511,6 +534,7 @@ function renderCamera(slot) {
       videoPreview.src = URL.createObjectURL(file);
       videoPreview.hidden = false;
       videoDataUrl = file.size < 4_000_000 ? await fileToDataUrl(file) : "";
+      revealDetails();
     });
   } else {
     captionEl.addEventListener("input", rebuildPreview);
@@ -557,7 +581,7 @@ function renderCamera(slot) {
         shutter.hidden = true;
         stopBtn.hidden = true;
         startBtn.hidden = false;
-        startBtn.textContent = "📷 Retake";
+        startBtn.textContent = "Retake";
       }
     });
 
@@ -641,22 +665,22 @@ function feedbackMarkup() {
     .map((item) => `<div class="mini-card"><strong>${escapeHtml(item.category)}</strong><p>${escapeHtml(item.message)}</p></div>`)
     .join("");
   return `
-    <section class="panel screen-card stack">
-      <p class="eyebrow">Dry mode feedback</p>
-      <h2>Help make the game better</h2>
-      <p class="muted">Prompt ideas, UI feedback, bugs, anything. In beta dry mode this stays local and does not persist to Cloudflare.</p>
-      <form id="feedback-form" class="stack">
-        <select class="select" name="category">
-          <option value="Prompt idea">Prompt idea</option>
-          <option value="UI feedback">UI feedback</option>
-          <option value="Bug">Bug</option>
-          <option value="Party idea">Party idea</option>
-        </select>
-        <textarea class="textarea" name="message" placeholder="What should we change or add?" required></textarea>
-        <button class="btn full" type="submit">Send beta feedback</button>
-      </form>
-      <div class="feedback-list">${localFeedback}</div>
-    </section>
+    <details class="feedback-drawer">
+      <summary>Beta notes (${state.feedback.length})</summary>
+      <div class="feedback-body">
+        <form id="feedback-form" class="stack">
+          <select class="select" name="category">
+            <option value="Prompt idea">Prompt idea</option>
+            <option value="UI feedback">UI feedback</option>
+            <option value="Bug">Bug</option>
+            <option value="Party idea">Party idea</option>
+          </select>
+          <textarea class="textarea" name="message" placeholder="Quick note for the host…" required></textarea>
+          <button class="btn btn-secondary btn-full" type="submit">Send note</button>
+        </form>
+        ${localFeedback ? `<div class="stack">${localFeedback}</div>` : ""}
+      </div>
+    </details>
   `;
 }
 
@@ -698,13 +722,13 @@ function renderEnd() {
   ];
   app.innerHTML = `
     ${topbar()}
-    <section class="screen-card stack end-card">
-      <p class="eyebrow">Time's up · ${escapeHtml(state.team.name)}</p>
-      <h1>${headline}</h1>
+    <section class="panel panel-pad stack end-screen">
+      <p class="kicker">Time's up · ${escapeHtml(state.team.name)}</p>
+      <h1 class="title-display">${headline}</h1>
       <div class="final-score" aria-label="Final score">
         <span class="final-score-num">${score}</span><span class="final-score-den">/ 10</span>
       </div>
-      <p class="big-copy">Quests completed by your team. Final scores and the winner are confirmed by the host.</p>
+      <p class="lead">Treasures found by your crew. Host confirms the winner.</p>
       <div class="award-grid">
         ${awards
           .map(
@@ -714,10 +738,11 @@ function renderEnd() {
           )
           .join("")}
       </div>
-      <button class="btn full" data-view-admin>See host scoreboard</button>
-      <button class="btn ghost full" data-replay>Back to quest board</button>
+      <button class="btn btn-primary btn-full" data-view-admin>Host scoreboard</button>
+      <button class="btn btn-ghost btn-full" data-replay>Back to map</button>
     </section>
   `;
+  screenEnter();
   burstConfetti();
   setTimeout(burstConfetti, 350);
   document.querySelector("[data-view-admin]").addEventListener("click", renderAdmin);
@@ -731,30 +756,31 @@ async function renderAdmin() {
     .join("");
   app.innerHTML = `
     ${topbar()}
-    <section class="screen-card stack">
-      <button class="btn ghost" data-back>Back to quests</button>
-      <p class="eyebrow">Host view</p>
-      <h1>Scores & Submissions</h1>
-      <p class="big-copy">${admin.dryRun ? "Dry mode is active. Cloudflare storage writes and reads are skipped." : "Live Cloudflare mode is active."}</p>
-      <div class="panel screen-card">
-        <h2>${escapeHtml(state.team?.name || "Current team")}</h2>
-        <p class="timer">${completedCount()} / 10</p>
-        <p class="muted">Export/download will connect to R2 once dry mode is turned off.</p>
+    <section class="panel panel-pad stack">
+      <button class="btn btn-ghost" data-back>← Back to map</button>
+      <p class="kicker">Host view</p>
+      <h2 class="title-quest">Scoreboard</h2>
+      <p class="lead">${admin.dryRun ? "Dry mode — no Cloudflare writes." : "Live mode active."}</p>
+      <div class="panel panel-pad">
+        <span class="team-name">${escapeHtml(state.team?.name || "Current crew")}</span>
+        <p class="title-quest" style="margin-top:8px;font-size:2.2rem">${completedCount()} / 10</p>
+        <p class="muted">Gallery export hooks up to R2 when dry mode is off.</p>
       </div>
-      <div class="submission-list">${submissions || `<p class="muted">No local submissions yet.</p>`}</div>
-      <button class="btn full secondary" type="button">Download parent gallery placeholder</button>
+      <div class="stack">${submissions || `<p class="muted">No local submissions yet.</p>`}</div>
+      <button class="btn btn-secondary btn-full" type="button">Download gallery (soon)</button>
     </section>
   `;
+  screenEnter();
   document.querySelector("[data-back]").addEventListener("click", renderGame);
 }
 
 async function boot() {
-  makeBubbles();
+  initScene(gameBg);
   status = await api("/api/status");
   if (!state.user || !state.team) renderJoin();
   else renderGame();
 }
 
 boot().catch((error) => {
-  app.innerHTML = `<section class="screen-card"><h1>Could not load</h1><p>${escapeHtml(error.message)}</p></section>`;
+  app.innerHTML = `<section class="panel panel-pad"><h2 class="title-quest">Could not load</h2><p class="lead">${escapeHtml(error.message)}</p></section>`;
 });
