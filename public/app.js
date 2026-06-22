@@ -204,7 +204,7 @@ function renderJoin() {
       <div class="join-badge">Treasure hunt · 60 minutes</div>
       <p class="kicker">Cleo's First Birthday</p>
       <h1 class="title-display">Bubble Quest</h1>
-      <p class="lead">Chase 10 photo treasures solo, meet everyone, and fill Cleo's birthday archive.</p>
+      <p class="lead">10 photo quests around the party — meet people and help us stack memories for Cleo.</p>
       <form id="join-form" class="stack" style="text-align:left;margin-top:6px">
         <label class="field">
           <span>Your real name</span>
@@ -1458,7 +1458,11 @@ function stage3ClearedState() {
   const done = new Set(state.submissions.map((s) => Number(s.questSlot)));
   return [7, 8, 9].every((s) => done.has(s));
 }
+function dryRunMode() {
+  return !!status?.dryRun;
+}
 function slotUnlocked(slot) {
+  if (dryRunMode()) return true;
   const stage = stageForSlotFn(slot);
   if (stage === 1) return true;
   const e = elapsedSeconds();
@@ -1490,6 +1494,7 @@ function formatClock(totalSeconds) {
 
 // Reveal "moments" when a stage unlocks or the final treasure opens up.
 function nextUnlockBanner() {
+  if (dryRunMode()) return null;
   const su = stageUnlocksMap();
   const e = elapsedSeconds();
   if (e < su[2]) return { label: "Stage 2 · treasures 4–6", at: su[2] };
