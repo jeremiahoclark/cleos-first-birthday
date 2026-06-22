@@ -13,7 +13,7 @@ const SAMPLE_PROMPTS = [
   { title: "The Silly Hat Snapshot", prompt: "Find a silly hat and the story behind it.", text: "Mario's sombrero: wore it to every family fiesta since '09." },
   { title: "The Time Capsule Toast", prompt: "A 15-second message for future Cleo.", text: "Stay wild, kid. The world is yours." },
   { title: "The Cleo Museum", prompt: "Four photos from the party.", text: "Cake, decor, bubbles, and one very happy baby." },
-  { title: "The Future Advice Council", prompt: "One piece of advice for Cleo.", text: "Never lose your curiosity, little one." },
+  { title: "The Future Advice Council", prompt: "Video advice for Cleo from you and a guest.", text: "Never lose your curiosity, little one." },
   { title: "The New Friend", prompt: "Meet someone new at the party.", text: "Ravi from down the block — we both love mangoes." },
   { title: "The Out-of-State Traveler", prompt: "Find a guest from out of state.", text: "Flew in from Portland just for this. Worth it." },
   { title: "The Birthday Cheer", prompt: "Record a birthday pose for Cleo.", text: "Arms up, biggest grin, full party energy." }

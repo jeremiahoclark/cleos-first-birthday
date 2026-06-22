@@ -58,6 +58,7 @@ test("slot 10 is always The Future Advice Council", () => {
     assert.equal(board[9].id, FINAL_QUEST.id);
     assert.equal(board[9].id, "future-advice-council");
     assert.equal(board[9].slot, 10);
+    assert.equal(board[9].mediaType, "video");
   }
 });
 

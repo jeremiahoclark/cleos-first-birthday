@@ -199,10 +199,11 @@ export const QUEST_STAGES = [
 export const FINAL_QUEST = {
   id: "future-advice-council",
   title: "The Future Advice Council",
-  composition: "caption",
+  composition: "plain",
+  mediaType: "video",
   prompt:
-    "Ask one guest for a piece of advice for future Cleo. Submit a photo with them and write their advice.",
-  requiredFields: ["Their name", "Their advice for Cleo"]
+    "Record a short video with you and one other guest. Each of you say one piece of advice for Cleo out loud — no need to write it down.",
+  requiredFields: ["Guest's name"]
 };
 
 export function getQuestPhotoSlots(quest) {

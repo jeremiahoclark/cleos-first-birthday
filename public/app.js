@@ -373,7 +373,7 @@ function activeQuestView(quest, quests) {
           `
             : labeledSlots
               ? labeledSlotsInlineMarkup(quest)
-              : `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Capture proof</button>`
+              : `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">${quest.mediaType === "video" ? "Record video" : "Capture proof"}</button>`
         }
         <div class="quest-nav ${labeledSlots && !complete ? "quest-nav--single" : ""}">
           <button class="btn btn-ghost" type="button" data-jump-slot="${previous}">← Prev</button>

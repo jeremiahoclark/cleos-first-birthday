@@ -72,7 +72,7 @@ const QUEST_TOASTS = {
     "Category found. The party roster makes sense now."
   ],
   "future-advice-council": [
-    "Advice for future Cleo — secured. She'll need this.",
+    "Advice for future Cleo — on camera. She'll need this.",
     "Final treasure. The council has spoken."
   ]
 };
