@@ -9,7 +9,7 @@ export const QUEST_STAGES = [
           title: "The Cleo Coalition",
           composition: "caption",
           prompt:
-            "Submit one photo with Cleo, one parent, and at least one person who had not met someone else in the photo before today.",
+            "Take a photo with Cleo and one guest you didn't arrive with. Get everyone's first names.",
           requiredFields: ["Everyone's first names"]
         },
         {
@@ -42,11 +42,11 @@ export const QUEST_STAGES = [
       [
         {
           id: "new-friendship-proof",
-          title: "The New Friendship Proof",
+          title: "The New Friend",
           composition: "side-by-side",
           prompt:
-            "Introduce two guests who did not know each other before the party. Submit a photo of them together.",
-          requiredFields: ["Both names", "One thing they have in common"]
+            "Meet someone at the party you didn't know before today. Submit a photo together.",
+          requiredFields: ["Their name", "One thing you have in common"]
         },
         {
           id: "silly-hat-snapshot",
@@ -69,16 +69,16 @@ export const QUEST_STAGES = [
           title: "The Family Bridge",
           composition: "caption",
           prompt:
-            "Submit a group photo with at least one person from each side of Cleo's family or social world.",
+            "Submit a photo with at least one person from each side of Cleo's family or social world.",
           requiredFields: ["How each person is connected to Cleo"]
         },
         {
-          id: "circle-crossover",
-          title: "The Circle Crossover",
-          composition: "caption",
+          id: "birthday-chorus",
+          title: "The Birthday Cheer",
+          composition: "plain",
           prompt:
-            "Submit a photo with four guests from four different relationship circles in Regina or Logan's worlds — such as family, friends, neighbors, coworkers, church, school, or parent groups.",
-          requiredFields: ["Each guest's circle (Regina or Logan)"]
+            "Record a short video or selfie of you doing a birthday pose, cheer, or gesture for Cleo.",
+          requiredFields: ["Your name"]
         }
       ],
       [
@@ -95,26 +95,26 @@ export const QUEST_STAGES = [
           title: "The Local Legend",
           composition: "caption",
           prompt:
-            "Find the guest who lives closest to the party. Submit a photo with them.",
-          requiredFields: ["A local place Cleo should visit when she is older"]
+            "Find a guest who lives nearby. Submit a photo with them and a local place Cleo should visit when she's older.",
+          requiredFields: ["Their name", "A local place Cleo should visit when she is older"]
         }
       ],
       [
         {
           id: "three-generation-shot",
-          title: "The Three-Generation Shot",
+          title: "The Life Chapter",
           composition: "side-by-side",
           prompt:
-            "Submit a photo that includes three generations. If three generations are not present, substitute the oldest and youngest guests in one photo.",
-          requiredFields: ["Generation labels or approximate ages"]
+            "Find a guest who's in a different life chapter than you right now — new parent, grandparent, student, between jobs, starting fresh, whatever fits. Submit a photo together.",
+          requiredFields: ["Their name", "What life chapter they're in right now"]
         },
         {
           id: "timeline-lineup",
-          title: "The Timeline Lineup",
+          title: "The Earlier Connection",
           composition: "caption",
           prompt:
-            "Gather four people who met Cleo or her parents at different life stages. Submit a photo ordered from earliest connection to newest connection.",
-          requiredFields: ["Year or season each connection started"]
+            "Find a guest who met Cleo or her parents earlier than you did. Submit a photo with them.",
+          requiredFields: ["Their name", "When they first met Cleo or her parents"]
         }
       ]
     ]
@@ -139,8 +139,8 @@ export const QUEST_STAGES = [
           composition: "plain",
           mediaType: "video",
           prompt:
-            "Record a 20-second video where three guests each answer: What should Cleo know about this day? No duplicate answers.",
-          requiredFields: ["Speaker names"]
+            "Record a 20-second video answering: What should Cleo know about this day? Just you, on camera.",
+          requiredFields: ["Your name"]
         }
       ],
       [
@@ -149,8 +149,14 @@ export const QUEST_STAGES = [
           title: "The Cleo Museum",
           composition: "collage",
           prompt:
-            "Submit a four-photo set: Cleo with a favorite object, party decor, food or cake nearby, and a guest making her smile.",
-          requiredFields: ["What each photo shows"]
+            "Capture four photos at the party — one for each label below.",
+          photoSlots: [
+            "Cleo with a favorite object",
+            "Party decor",
+            "Food or cake nearby",
+            "A guest making her smile"
+          ],
+          requiredFields: []
         },
         {
           id: "first-birthday-field-notes",
@@ -170,20 +176,20 @@ export const QUEST_STAGES = [
       ],
       [
         {
-          id: "birthday-chorus",
-          title: "The Birthday Chorus",
-          composition: "plain",
+          id: "circle-crossover",
+          title: "The Circle Crossover",
+          composition: "caption",
           prompt:
-            "Gather at least six guests for a photo or short video where everyone is doing the same birthday pose, cheer, or gesture.",
-          requiredFields: ["Which guests you met at the party today"]
+            "Find a guest whose relationship circle in Regina or Logan's world is different from yours. Submit a photo together.",
+          requiredFields: ["Their name", "Their circle (Regina or Logan)"]
         },
         {
           id: "grand-assembly",
-          title: "The Grand Assembly",
+          title: "The Guest Spotter",
           composition: "plain",
           prompt:
-            "Gather at least eight guests for one photo. Include someone who met Cleo before today, someone who met her today, someone younger than 10 if present, and someone older than 60 if present.",
-          requiredFields: ["Who satisfies each category"]
+            "Find one guest who fits any of these: met Cleo before today, met her today, is under 10, or is over 60. Submit a photo with them.",
+          requiredFields: ["Their name", "Which category they fit"]
         }
       ]
     ]
@@ -195,8 +201,8 @@ export const FINAL_QUEST = {
   title: "The Future Advice Council",
   composition: "caption",
   prompt:
-    "Collect advice for future Cleo from five guests across different ages or life stages. Submit a group photo with at least three of them.",
-  requiredFields: ["Five advice lines"]
+    "Ask one guest for a piece of advice for future Cleo. Submit a photo with them and write their advice.",
+  requiredFields: ["Their name", "Their advice for Cleo"]
 };
 
 export function getQuestPhotoSlots(quest) {
@@ -233,6 +239,19 @@ export function generateQuestBoard(seed) {
   return quests;
 }
 
+export function findQuestById(id) {
+  if (!id) return null;
+  if (FINAL_QUEST.id === id) return FINAL_QUEST;
+  for (const stage of QUEST_STAGES) {
+    for (const pair of stage.slots) {
+      for (const quest of pair) {
+        if (quest.id === id) return quest;
+      }
+    }
+  }
+  return null;
+}
+
 export function scoreSubmissions(submissions = []) {
   const completedSlots = new Set(
     submissions
@@ -242,4 +261,3 @@ export function scoreSubmissions(submissions = []) {
   );
   return completedSlots.size;
 }
-

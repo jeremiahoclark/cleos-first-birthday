@@ -17,7 +17,8 @@
     "DRY_RUN": "true",
     "BETA_MODE": "true",
     "EVENT_NAME": "Cleo's First Birthday Quest",
-    "GAME_DURATION_SECONDS": "3600"
+    "GAME_DURATION_SECONDS": "3600",
+    "HOST_PIN": "cleo"
   },
   "kv_namespaces": [
     {

@@ -1,6 +1,16 @@
 import { generateQuestBoard, scoreSubmissions } from "./shared/quests.js";
 import { createDeviceFingerprint, getClientIp, hashDeviceFingerprint } from "./shared/device.js";
 import { isDryRun, persistWhenLive } from "./shared/dryRun.js";
+import { getConnectionCount, incrementConnectionCount } from "./shared/partyStats.js";
+import { HOST_SIDE_QUESTS } from "./shared/sideQuests.js";
+import {
+  getLeaderboard,
+  getPartyWall,
+  toggleLike,
+  addComment,
+  getMedia,
+  STAGE_UNLOCK_SECONDS
+} from "./shared/partyHandlers.js";
 
 const EVENT_ID = "cleo-first-birthday";
 
@@ -79,6 +89,8 @@ async function registerUser(request, env) {
 async function submitQuest(request, env) {
   const body = await parseJson(request);
   const boardId = String(body.boardId || body.teamId || "");
+  const slotImages = Array.isArray(body.slotImages) ? body.slotImages.map(String) : [];
+  const slotLabels = Array.isArray(body.slotLabels) ? body.slotLabels.map(String) : [];
   const submission = {
     id: makeId(isDryRun(env) ? "dry_submission" : "submission"),
     eventId: EVENT_ID,
@@ -100,6 +112,132 @@ async function submitQuest(request, env) {
   }
 
   const mediaKey = `events/${EVENT_ID}/guests/${submission.userId}/${submission.id}`;
+  const persistence = await persistWhenLive(env, async () => {
+    if (submission.mediaDataUrl && env.MEDIA_BUCKET) {
+      await env.MEDIA_BUCKET.put(mediaKey, submission.mediaDataUrl, {
+        httpMetadata: { contentType: "text/plain; charset=utf-8" }
+      });
+    }
+    for (let i = 0; i < slotImages.length; i += 1) {
+      if (!slotImages[i] || !env.MEDIA_BUCKET) continue;
+      const label = slotLabels[i] || `slot-${i + 1}`;
+      const slotKey = `${mediaKey}/slots/${i + 1}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}.jpg`;
+      await env.MEDIA_BUCKET.put(slotKey, slotImages[i], {
+        httpMetadata: { contentType: "text/plain; charset=utf-8" }
+      });
+      submission.requiredFields[label] = slotKey;
+    }
+    await env.DB.prepare(
+      `INSERT INTO submissions
+       (id, event_id, team_id, user_id, quest_slot, quest_id, caption, required_fields_json, media_key, composition_mode, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        submission.id,
+        EVENT_ID,
+        submission.boardId,
+        submission.userId,
+        submission.questSlot,
+        submission.questId,
+        submission.caption,
+        JSON.stringify(submission.requiredFields),
+        mediaKey,
+        submission.compositionMode,
+        submission.status
+      )
+      .run();
+    return { mediaKey };
+  });
+
+  return json({
+    dryRun: isDryRun(env),
+    persisted: persistence.persisted,
+    submission: {
+      ...submission,
+      mediaDataUrl: isDryRun(env) ? submission.mediaDataUrl : undefined,
+      slotImages: isDryRun(env) ? slotImages : undefined,
+      mediaKey
+    },
+    score: scoreSubmissions([submission])
+  });
+}
+
+async function submitFeedback(request, env) {
+  const body = await parseJson(request);
+  const message = String(body.message || "").trim();
+  const category = String(body.category || "idea").trim();
+  if (!message) return json({ error: "message is required" }, { status: 400 });
+
+  const feedback = {
+    id: makeId(isDryRun(env) ? "dry_feedback" : "feedback"),
+    eventId: EVENT_ID,
+    userId: String(body.userId || ""),
+    category,
+    message,
+    createdAt: new Date().toISOString()
+  };
+
+  const persistence = await persistWhenLive(env, async () => {
+    await env.DB.prepare("INSERT INTO feedback (id, event_id, user_id, category, message) VALUES (?, ?, ?, ?, ?)")
+      .bind(feedback.id, EVENT_ID, feedback.userId || null, feedback.category, feedback.message)
+      .run();
+  });
+
+  return json({ dryRun: isDryRun(env), persisted: persistence.persisted, feedback });
+}
+
+function hostPinValid(env, pin) {
+  const expected = String(env.HOST_PIN || "").trim();
+  if (!expected) return false;
+  return String(pin || "").trim() === expected;
+}
+
+async function recordConnection(request, env) {
+  const body = await parseJson(request);
+  if (!body.metSomeoneNew) {
+    return json({ dryRun: isDryRun(env), connectionCount: await getConnectionCount(env) });
+  }
+
+  if (isDryRun(env)) {
+    const connectionCount = await incrementConnectionCount(env);
+    return json({ dryRun: true, persisted: false, connectionCount });
+  }
+
+  const persistence = await persistWhenLive(env, async () => incrementConnectionCount(env));
+  return json({
+    dryRun: false,
+    persisted: persistence.persisted,
+    connectionCount: persistence.result ?? (await getConnectionCount(env))
+  });
+}
+
+async function submitHostSideQuest(request, env) {
+  const body = await parseJson(request);
+  if (!hostPinValid(env, body.hostPin)) {
+    return json({ error: "Invalid host pin" }, { status: 403 });
+  }
+
+  const sideQuest = findHostSideQuest(String(body.sideQuestId || ""));
+  if (!sideQuest) return json({ error: "Unknown side quest" }, { status: 400 });
+
+  const userId = String(body.userId || "host");
+  const submission = {
+    id: makeId(isDryRun(env) ? "dry_side" : "side_submission"),
+    eventId: EVENT_ID,
+    boardId: userId,
+    userId,
+    questSlot: 0,
+    questId: sideQuest.id,
+    caption: String(body.caption || sideQuest.title),
+    requiredFields: { sideQuest: sideQuest.title, prompt: sideQuest.prompt },
+    compositionMode: "plain",
+    mediaName: `${sideQuest.id}.jpg`,
+    mediaDataUrl: String(body.mediaDataUrl || ""),
+    status: "side_quest",
+    createdAt: new Date().toISOString()
+  };
+
+  const mediaKey = `events/${EVENT_ID}/host/${userId}/${submission.id}`;
   const persistence = await persistWhenLive(env, async () => {
     if (submission.mediaDataUrl && env.MEDIA_BUCKET) {
       await env.MEDIA_BUCKET.put(mediaKey, submission.mediaDataUrl, {
@@ -131,33 +269,12 @@ async function submitQuest(request, env) {
   return json({
     dryRun: isDryRun(env),
     persisted: persistence.persisted,
-    submission: { ...submission, mediaDataUrl: isDryRun(env) ? submission.mediaDataUrl : undefined, mediaKey },
-    score: scoreSubmissions([submission])
+    submission: {
+      ...submission,
+      mediaDataUrl: isDryRun(env) ? submission.mediaDataUrl : undefined,
+      mediaKey
+    }
   });
-}
-
-async function submitFeedback(request, env) {
-  const body = await parseJson(request);
-  const message = String(body.message || "").trim();
-  const category = String(body.category || "idea").trim();
-  if (!message) return json({ error: "message is required" }, { status: 400 });
-
-  const feedback = {
-    id: makeId(isDryRun(env) ? "dry_feedback" : "feedback"),
-    eventId: EVENT_ID,
-    userId: String(body.userId || ""),
-    category,
-    message,
-    createdAt: new Date().toISOString()
-  };
-
-  const persistence = await persistWhenLive(env, async () => {
-    await env.DB.prepare("INSERT INTO feedback (id, event_id, user_id, category, message) VALUES (?, ?, ?, ?, ?)")
-      .bind(feedback.id, EVENT_ID, feedback.userId || null, feedback.category, feedback.message)
-      .run();
-  });
-
-  return json({ dryRun: isDryRun(env), persisted: persistence.persisted, feedback });
 }
 
 async function getStatus(env) {
@@ -168,8 +285,16 @@ async function getStatus(env) {
       durationSeconds: Number(env.GAME_DURATION_SECONDS || 3600)
     },
     dryRun: isDryRun(env),
+    connectionCount: await getConnectionCount(env),
+    // Per-stage unlock thresholds (seconds elapsed since each guest's start).
+    // Stage 1 = 0; stage 4 (slot 10) is gated on clearing stage 3, not the clock.
+    stageUnlocks: STAGE_UNLOCK_SECONDS,
     quests: generateQuestBoard("preview-board")
   });
+}
+
+async function getHostSideQuests() {
+  return json({ sideQuests: HOST_SIDE_QUESTS });
 }
 
 async function getAdmin(env) {
@@ -185,7 +310,7 @@ async function getAdmin(env) {
   const [guests, submissions] = await Promise.all([
     env.DB.prepare(
       `SELECT u.id, u.game_name, u.real_name, u.created_at,
-              COUNT(DISTINCT CASE WHEN s.status != 'rejected' THEN s.quest_slot END) AS score
+              COUNT(DISTINCT CASE WHEN s.status != 'rejected' AND s.quest_slot BETWEEN 1 AND 10 THEN s.quest_slot END) AS score
        FROM users u
        LEFT JOIN submissions s ON s.user_id = u.id AND s.event_id = u.event_id
        WHERE u.event_id = ?
@@ -204,15 +329,40 @@ async function getAdmin(env) {
   return json({ dryRun: false, guests: guests.results || [], submissions: submissions.results || [] });
 }
 
+function withAbsoluteSocialUrls(html, origin) {
+  return html.replaceAll('content="/og-image.png"', `content="${origin}/og-image.png"`);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/status") return getStatus(env);
-    if (url.pathname === "/api/register" && request.method === "POST") return registerUser(request, env);
-    if (url.pathname === "/api/submissions" && request.method === "POST") return submitQuest(request, env);
-    if (url.pathname === "/api/feedback" && request.method === "POST") return submitFeedback(request, env);
-    if (url.pathname === "/api/admin") return getAdmin(env);
-    if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, { status: 404 });
-    return env.ASSETS.fetch(request);
+    const { pathname } = url;
+    if (pathname === "/api/status") return getStatus(env);
+    if (pathname === "/api/register" && request.method === "POST") return registerUser(request, env);
+    if (pathname === "/api/submissions" && request.method === "POST") return submitQuest(request, env);
+    if (pathname === "/api/connections" && request.method === "POST") return recordConnection(request, env);
+    if (pathname === "/api/host/side-quests") return getHostSideQuests();
+    if (pathname === "/api/host/side-quest" && request.method === "POST") return submitHostSideQuest(request, env);
+    if (pathname === "/api/feedback" && request.method === "POST") return submitFeedback(request, env);
+    if (pathname === "/api/leaderboard") return getLeaderboard(env);
+    if (pathname === "/api/party-wall" || pathname === "/api/wall") return getPartyWall(url, env);
+    if (pathname === "/api/likes" && request.method === "POST") return toggleLike(request, env);
+    if (pathname === "/api/comments" && request.method === "POST") return addComment(request, env);
+    if (pathname.startsWith("/api/media/") && request.method === "GET") {
+      return getMedia(env, pathname.slice("/api/media/".length));
+    }
+    if (pathname === "/api/admin") return getAdmin(env);
+    if (pathname.startsWith("/api/")) return json({ error: "Not found" }, { status: 404 });
+    const assetResponse = await env.ASSETS.fetch(request);
+    const isHtml =
+      pathname === "/" ||
+      pathname === "/index.html" ||
+      assetResponse.headers.get("content-type")?.includes("text/html");
+    if (!isHtml || !assetResponse.ok) return assetResponse;
+    const html = await assetResponse.text();
+    return new Response(withAbsoluteSocialUrls(html, url.origin), {
+      status: assetResponse.status,
+      headers: assetResponse.headers
+    });
   }
 };

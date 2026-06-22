@@ -1,19 +1,12 @@
 import { composeProof, loadImage } from "/compose.js";
 import { initScene } from "/scene.js";
+import { getQuestToast } from "/quest-toasts.js";
 
 const app = document.querySelector("#app");
 const gameBg = document.querySelector("#game-bg");
 const STORAGE_KEY = "cleoQuestState:v2";
 const DEVICE_KEY = "cleoQuestDeviceId:v1";
-
-const affirmations = [
-  "Quest captured. Cleo's archive just got better.",
-  "That one is birthday-book material.",
-  "Excellent proof. The parents are going to love this.",
-  "Legend behavior.",
-  "Memory secured. On to the next quest.",
-  "That submission has serious party energy."
-];
+const HOST_PIN_KEY = "cleoHostPin:v1";
 
 const state = loadState();
 let status = null;
@@ -22,14 +15,103 @@ let activeQuestSlot = 1;
 
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) return JSON.parse(saved);
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (!parsed.slotDrafts) parsed.slotDrafts = {};
+    if (!parsed.sideQuestCaptures) parsed.sideQuestCaptures = [];
+    return parsed;
+  }
   return {
     user: null,
     board: null,
     startedAt: null,
     submissions: [],
-    feedback: []
+    feedback: [],
+    slotDrafts: {},
+    sideQuestCaptures: []
   };
+}
+
+function getHostPin() {
+  return sessionStorage.getItem(HOST_PIN_KEY) || "";
+}
+
+function setHostPin(pin) {
+  if (pin) sessionStorage.setItem(HOST_PIN_KEY, pin);
+  else sessionStorage.removeItem(HOST_PIN_KEY);
+}
+
+async function refreshConnectionCount() {
+  try {
+    const data = await api("/api/status");
+    status = data;
+    const count = data.connectionCount ?? 0;
+    const meter = document.querySelector(".connection-meter strong");
+    if (meter) meter.textContent = String(count);
+    const meterWrap = document.querySelector(".connection-meter");
+    if (meterWrap) meterWrap.hidden = count < 1;
+    return count;
+  } catch {
+    return status?.connectionCount ?? 0;
+  }
+}
+
+function connectionMeterMarkup(count) {
+  if (!count) return "";
+  return `
+    <div class="connection-meter" aria-live="polite">
+      <span class="connection-meter__icon" aria-hidden="true">🤝</span>
+      <span><strong>${count}</strong> new connection${count === 1 ? "" : "s"} at this party</span>
+    </div>
+  `;
+}
+
+function showMeetSomeonePrompt() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "meet-overlay";
+    overlay.innerHTML = `
+      <div class="meet-card" role="dialog" aria-labelledby="meet-title">
+        <p class="kicker">Quick check-in</p>
+        <h3 class="title-quest" id="meet-title">Did you meet someone new?</h3>
+        <p class="lead">Every yes adds to the party connection counter.</p>
+        <div class="meet-actions">
+          <button class="btn btn-primary btn-full" type="button" data-met="yes">Yes!</button>
+          <button class="btn btn-secondary btn-full" type="button" data-met="no">Not this time</button>
+          <button class="btn btn-ghost btn-full" type="button" data-met="skip">Skip</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("show"));
+
+    async function finish(metSomeoneNew) {
+      overlay.classList.remove("show");
+      setTimeout(() => overlay.remove(), 220);
+      if (metSomeoneNew) {
+        try {
+          const result = await api("/api/connections", {
+            method: "POST",
+            body: JSON.stringify({ metSomeoneNew: true, userId: state.user?.id })
+          });
+          if (status) status.connectionCount = result.connectionCount;
+        } catch {
+          /* counter is nice-to-have */
+        }
+      }
+      resolve();
+    }
+
+    overlay.querySelector('[data-met="yes"]')?.addEventListener("click", () => finish(true));
+    overlay.querySelector('[data-met="no"]')?.addEventListener("click", () => finish(false));
+    overlay.querySelector('[data-met="skip"]')?.addEventListener("click", () => finish(false));
+  });
+}
+
+async function celebrateQuestSubmit(quest) {
+  const { message, dramatic } = getQuestToast(quest.id);
+  showToast(message, dramatic);
+  await showMeetSomeonePrompt();
 }
 
 function saveState() {
@@ -200,6 +282,7 @@ function timerMarkup() {
         <span class="timer-value" data-timer>${formatTime(remaining)}</span>
       </div>
       <div class="urgency-banner" data-urgency hidden></div>
+      ${connectionMeterMarkup(status?.connectionCount ?? 0)}
     </section>
   `;
 }
@@ -240,9 +323,10 @@ function progressNav(quests) {
 function activeQuestView(quest, quests) {
   const complete = isComplete(quest.slot);
   const labeledSlots = hasLabeledSlots(quest);
-  const requirements = labeledSlots
-    ? quest.photoSlots.map((label) => `<div class="loot-item">${escapeHtml(label)}</div>`).join("")
-    : quest.requiredFields.map((field) => `<div class="loot-item">${escapeHtml(field)}</div>`).join("");
+  const requirements =
+    !labeledSlots && quest.requiredFields.length
+      ? `<div class="loot-list">${quest.requiredFields.map((field) => `<div class="loot-item">${escapeHtml(field)}</div>`).join("")}</div>`
+      : "";
   const previous = quest.slot > 1 ? quest.slot - 1 : quests.length;
   const next = quest.slot < quests.length ? quest.slot + 1 : 1;
   return `
@@ -253,7 +337,7 @@ function activeQuestView(quest, quests) {
       </div>
       <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
       <p class="quest-prompt">${escapeHtml(quest.prompt)}</p>
-      ${requirements ? `<div class="loot-list">${requirements}</div>` : ""}
+      ${requirements}
       <div class="quest-actions">
         ${
           complete
@@ -265,14 +349,14 @@ function activeQuestView(quest, quests) {
             <button class="btn btn-primary btn-full" data-next-open>Next treasure</button>
           `
             : labeledSlots
-              ? `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Add all ${quest.photoSlots.length} photos</button>`
+              ? labeledSlotsInlineMarkup(quest)
               : `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Capture proof</button>`
         }
         <div class="quest-nav ${labeledSlots && !complete ? "quest-nav--single" : ""}">
           <button class="btn btn-ghost" type="button" data-jump-slot="${previous}">← Prev</button>
           ${
             labeledSlots && !complete
-              ? `<span class="quest-nav-hint">Fill every slot, then submit all</span>`
+              ? `<span class="quest-nav-hint">Tap each + to add a photo</span>`
               : `<button class="btn btn-secondary" type="button" data-jump-slot="${next}">Next →</button>`
           }
         </div>
@@ -369,6 +453,11 @@ function bindGameEvents() {
     renderJoin();
   });
   bindFeedback();
+  const activeQuest = state.board?.quests?.find((quest) => Number(quest.slot) === Number(activeQuestSlot));
+  if (activeQuest && hasLabeledSlots(activeQuest) && !isComplete(activeQuest.slot)) {
+    bindInlineLabeledSlots(activeQuest);
+  }
+  refreshConnectionCount();
 }
 
 let cameraStream = null;
@@ -395,223 +484,125 @@ function hasLabeledSlots(quest) {
   return Array.isArray(quest.photoSlots) && quest.photoSlots.length > 0;
 }
 
-function renderLabeledSlotCamera(slot, quest, slotLabels) {
-  const shots = Array(slotLabels.length).fill(null);
-  let activeSlot = 0;
-  let composed = null;
+function getSlotDraft(questSlot, length) {
+  const key = String(questSlot);
+  if (!state.slotDrafts) state.slotDrafts = {};
+  if (!state.slotDrafts[key] || state.slotDrafts[key].length !== length) {
+    state.slotDrafts[key] = Array(length).fill(null);
+  }
+  return state.slotDrafts[key];
+}
 
-  app.innerHTML = `
-    ${topbar()}
-    <section class="panel panel-pad stack capture-screen">
-      <button class="btn btn-ghost" type="button" data-back>← Back</button>
-      <p class="kicker">Treasure ${quest.slot}</p>
-      <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
-      <p class="lead">${escapeHtml(quest.prompt)}</p>
-
-      <form id="submission-form" class="stack">
-        <div class="capture-hero capture-hero--slots">
-          <div class="capture-frame" data-capture-frame>
-            <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
-            <button type="button" class="cam-big" data-cam-btn aria-label="Open camera">${CAMERA_ICON}</button>
-          </div>
-          <label class="upload-plus" aria-label="Upload photo for active slot">
-            <input type="file" name="upload" accept="image/*">
-            <span>+</span>
-          </label>
-        </div>
-
-        <div class="labeled-slots" data-labeled-slots>
-          ${slotLabels
-            .map(
-              (label, index) => `
-                <div class="labeled-slot ${index === 0 ? "active" : ""}" data-slot="${index}" role="button" tabindex="0">
-                  <span class="slot-thumb" data-slot-thumb="${index}">
-                    <span class="slot-plus">+</span>
-                  </span>
-                  <span class="slot-label">${escapeHtml(label)}</span>
-                </div>
-              `
-            )
-            .join("")}
-        </div>
-
-        <select name="compositionMode" hidden aria-hidden="true">
-          <option value="collage" selected>Collage / set</option>
-        </select>
-        <img data-composed alt="" hidden>
-
-        <div class="capture-fields">
-          ${compactField("Caption", "caption", "Optional note for Cleo's parents…", false)}
-        </div>
-
-        <button class="btn btn-primary btn-full" type="submit" data-submit disabled>Submit all</button>
-      </form>
-    </section>
+function labeledSlotsInlineMarkup(quest) {
+  const draft = getSlotDraft(quest.slot, quest.photoSlots.length);
+  const allFilled = draft.every(Boolean);
+  return `
+    <div class="labeled-slots labeled-slots--inline" data-labeled-quest="${quest.slot}">
+      ${quest.photoSlots
+        .map((label, index) => {
+          const filled = draft[index];
+          return `
+            <div class="labeled-slot ${filled ? "filled" : ""}" data-slot="${index}">
+              <label class="slot-thumb" aria-label="${escapeHtml(label)}">
+                <input type="file" class="slot-file" accept="image/*" capture="environment" data-slot-file="${index}">
+                ${
+                  filled
+                    ? `<img src="${filled}" alt=""><button type="button" class="slot-clear" data-clear-slot="${index}" aria-label="Remove photo">×</button>`
+                    : `<span class="slot-plus">+</span>`
+                }
+              </label>
+              <span class="slot-label">${escapeHtml(label)}</span>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+    <button class="btn btn-primary btn-full" type="button" data-submit-labeled="${quest.slot}" ${allFilled ? "" : "disabled"}>
+      Submit all
+    </button>
   `;
-  screenEnter();
+}
 
-  const back = () => {
-    stopCamera();
-    renderGame();
+function bindInlineLabeledSlots(quest) {
+  const draft = getSlotDraft(quest.slot, quest.photoSlots.length);
+
+  document.querySelectorAll("[data-slot-file]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const index = Number(input.dataset.slotFile);
+      const file = input.files?.[0];
+      if (!file?.type.startsWith("image/")) return;
+      draft[index] = await fileToDataUrl(file);
+      saveState();
+      renderGame();
+    });
+  });
+
+  document.querySelectorAll("[data-clear-slot]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      draft[Number(button.dataset.clearSlot)] = null;
+      saveState();
+      renderGame();
+    });
+  });
+
+  document.querySelector(`[data-submit-labeled="${quest.slot}"]`)?.addEventListener("click", () => {
+    submitLabeledQuest(quest);
+  });
+}
+
+async function submitLabeledQuest(quest) {
+  const shots = getSlotDraft(quest.slot, quest.photoSlots.length);
+  if (!shots.every(Boolean)) {
+    showToast("Add a photo for every slot.");
+    return;
+  }
+
+  const images = await Promise.all(shots.map(loadImage));
+  const composed = composeProof({
+    mode: "collage",
+    images,
+    caption: "",
+    title: quest.title,
+    reference: quest.prompt
+  });
+
+  const requiredFields = {};
+  quest.photoSlots.forEach((label) => {
+    requiredFields[label] = label;
+  });
+
+  const slotImages = shots.map((shot) => (shot.length < 1_400_000 ? shot : ""));
+  const mediaDataUrl = composed.dataUrl.length < 1_400_000 ? composed.dataUrl : "";
+
+  const payload = {
+    userId: state.user.id,
+    boardId: state.board.id,
+    questSlot: quest.slot,
+    questId: quest.id,
+    caption: "",
+    requiredFields,
+    compositionMode: "collage",
+    mediaName: `${quest.id}.jpg`,
+    mediaDataUrl,
+    slotImages,
+    slotLabels: quest.photoSlots
   };
-  document.querySelector("[data-back]").addEventListener("click", back);
 
-  const submitBtn = document.querySelector("[data-submit]");
-  const captionEl = document.querySelector("[name='caption']");
-
-  function nextEmptySlot() {
-    const empty = shots.findIndex((shot) => !shot);
-    return empty === -1 ? shots.length - 1 : empty;
-  }
-
-  function renderSlotGrid() {
-    document.querySelectorAll(".labeled-slot").forEach((button) => {
-      const index = Number(button.dataset.slot);
-      const thumb = button.querySelector("[data-slot-thumb]");
-      const filled = shots[index];
-      button.classList.toggle("active", index === activeSlot);
-      button.classList.toggle("filled", Boolean(filled));
-      thumb.innerHTML = filled
-        ? `<img src="${filled}" alt=""><button type="button" class="slot-clear" data-clear="${index}" aria-label="Remove photo">×</button>`
-        : `<span class="slot-plus">+</span>`;
-    });
-    document.querySelectorAll("[data-clear]").forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        shots[Number(btn.dataset.clear)] = null;
-        activeSlot = Number(btn.dataset.clear);
-        renderSlotGrid();
-        rebuildPreview();
-      });
-    });
-    submitBtn.disabled = !shots.every(Boolean);
-  }
-
-  async function rebuildPreview() {
-    if (!shots.every(Boolean)) {
-      composed = null;
-      submitBtn.disabled = true;
-      return;
-    }
-    const images = await Promise.all(shots.map(loadImage));
-    composed = composeProof({
-      mode: "collage",
-      images,
-      caption: captionEl.value,
-      title: quest.title,
-      reference: quest.prompt
-    });
-    submitBtn.disabled = false;
-  }
-
-  function setSlotShot(index, dataUrl) {
-    shots[index] = dataUrl;
-    activeSlot = nextEmptySlot();
-    renderSlotGrid();
-    rebuildPreview();
-  }
-
-  document.querySelector("[data-labeled-slots]").addEventListener("click", (event) => {
-    const slotBtn = event.target.closest("[data-slot]");
-    if (!slotBtn || event.target.closest("[data-clear]")) return;
-    activeSlot = Number(slotBtn.dataset.slot);
-    renderSlotGrid();
-  });
-
-  captionEl.addEventListener("input", rebuildPreview);
-
-  const uploadInput = document.querySelector("[name='upload']");
-  uploadInput.addEventListener("change", async () => {
-    const file = uploadInput.files?.[0];
-    if (file?.type.startsWith("image/")) setSlotShot(activeSlot, await fileToDataUrl(file));
-    uploadInput.value = "";
-  });
-
-  const feed = document.querySelector("[data-feed]");
-  const frame = document.querySelector("[data-capture-frame]");
-  const camBtn = document.querySelector("[data-cam-btn]");
-
-  camBtn.addEventListener("click", async () => {
-    if (cameraStream) {
-      const canvas = document.createElement("canvas");
-      canvas.width = feed.videoWidth || 1080;
-      canvas.height = feed.videoHeight || 1440;
-      canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
-      setSlotShot(activeSlot, canvas.toDataURL("image/jpeg", 0.85));
-      stopCamera();
-      feed.hidden = true;
-      frame.classList.remove("capture-frame--live");
-      camBtn.classList.remove("cam-big--live");
-      camBtn.innerHTML = CAMERA_ICON;
-      camBtn.setAttribute("aria-label", "Open camera");
-      return;
-    }
-
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false
-      });
-      feed.srcObject = cameraStream;
-      feed.hidden = false;
-      frame.classList.add("capture-frame--live");
-      camBtn.classList.add("cam-big--live");
-      camBtn.innerHTML = "";
-      camBtn.setAttribute("aria-label", "Take photo");
-    } catch {
-      showToast("Camera unavailable — tap + on a slot to upload.");
-    }
-  });
-
-  renderSlotGrid();
-
-  document.querySelector("#submission-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!shots.every(Boolean)) {
-      showToast("Add a photo for every slot.");
-      return;
-    }
-    if (!composed) {
-      showToast("Still preparing your collage…");
-      return;
-    }
-
-    const form = new FormData(event.currentTarget);
-    const requiredFields = {};
-    slotLabels.forEach((label) => {
-      requiredFields[label] = label;
-    });
-
-    const mediaDataUrl = composed.dataUrl.length < 1_400_000 ? composed.dataUrl : "";
-    const payload = {
-      userId: state.user.id,
-      boardId: state.board.id,
-      questSlot: quest.slot,
-      questId: quest.id,
-      caption: form.get("caption") || "",
-      requiredFields,
-      compositionMode: "collage",
-      mediaName: `${quest.id}.jpg`,
-      mediaDataUrl
-    };
-    const result = await api("/api/submissions", { method: "POST", body: JSON.stringify(payload) });
-    stopCamera();
-    state.submissions = state.submissions.filter((submission) => Number(submission.questSlot) !== Number(quest.slot));
-    const { mediaDataUrl: _omit, ...lean } = result.submission;
-    state.submissions.push(lean);
-    activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
-    saveState();
-    showToast(affirmations[Math.floor(Math.random() * affirmations.length)], Math.random() > 0.35);
-    renderGame();
-  });
+  const result = await api("/api/submissions", { method: "POST", body: JSON.stringify(payload) });
+  delete state.slotDrafts[String(quest.slot)];
+  state.submissions = state.submissions.filter((submission) => Number(submission.questSlot) !== Number(quest.slot));
+  const { mediaDataUrl: _omit, slotImages: _slots, ...lean } = result.submission;
+  state.submissions.push(lean);
+  activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
+  saveState();
+  await celebrateQuestSubmit(quest);
+  renderGame();
 }
 
 function renderCamera(slot) {
   const quest = state.board.quests.find((item) => Number(item.slot) === Number(slot));
-  if (hasLabeledSlots(quest)) {
-    renderLabeledSlotCamera(slot, quest, quest.photoSlots);
-    return;
-  }
   const isVideoQuest = quest.mediaType === "video";
   const allowMultiple = quest.composition === "collage";
   const shots = [];
@@ -830,7 +821,7 @@ function renderCamera(slot) {
     state.submissions.push(lean);
     activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
     saveState();
-    showToast(affirmations[Math.floor(Math.random() * affirmations.length)], Math.random() > 0.35);
+    await celebrateQuestSubmit(quest);
     renderGame();
   });
 }
@@ -945,29 +936,207 @@ function renderEnd() {
 }
 
 async function renderAdmin() {
-  const admin = await api("/api/admin");
-  const submissions = state.submissions
-    .map((submission) => `<div class="mini-card"><strong>Quest ${submission.questSlot}</strong><p>${escapeHtml(submission.questId)} · ${escapeHtml(submission.caption)}</p></div>`)
+  const hostPin = getHostPin();
+  if (!hostPin) {
+    app.innerHTML = `
+      ${topbar()}
+      <section class="panel panel-pad stack">
+        <button class="btn btn-ghost" type="button" data-back>← Back</button>
+        <p class="kicker">Host view</p>
+        <h2 class="title-quest">Host unlock</h2>
+        <p class="lead">Enter the host pin to capture side quests and see the guest board.</p>
+        <form id="host-pin-form" class="stack">
+          <label class="field">
+            <span>Host pin</span>
+            <input class="input" name="hostPin" type="password" inputmode="numeric" autocomplete="off" required>
+          </label>
+          <button class="btn btn-primary btn-full" type="submit">Unlock host tools</button>
+        </form>
+      </section>
+    `;
+    screenEnter();
+    document.querySelector("[data-back]")?.addEventListener("click", renderGame);
+    document.querySelector("#host-pin-form")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const pin = new FormData(event.currentTarget).get("hostPin");
+      setHostPin(String(pin));
+      renderAdmin();
+    });
+    return;
+  }
+
+  let admin = { dryRun: true, guests: [], submissions: [] };
+  let sideQuests = [];
+  try {
+    [admin, { sideQuests }] = await Promise.all([api("/api/admin"), api("/api/host/side-quests")]);
+  } catch {
+    /* host tools still work locally in dry mode */
+  }
+
+  const connectionCount = status?.connectionCount ?? 0;
+  const localSide = (state.sideQuestCaptures || [])
+    .map(
+      (item) =>
+        `<div class="mini-card"><strong>${escapeHtml(item.caption || item.questId)}</strong><p class="muted">${escapeHtml(item.createdAt || "")}</p></div>`
+    )
     .join("");
+
   app.innerHTML = `
     ${topbar()}
-    <section class="panel panel-pad stack">
-      <button class="btn btn-ghost" data-back>← Back to map</button>
+    <section class="panel panel-pad stack host-panel">
+      <button class="btn btn-ghost" type="button" data-back>← Back</button>
       <p class="kicker">Host view</p>
-      <h2 class="title-quest">Guest board</h2>
-      <p class="lead">${admin.dryRun ? "Dry mode — no Cloudflare writes." : "Live mode active."}</p>
+      <h2 class="title-quest">Party HQ</h2>
+      <p class="lead">${admin.dryRun ? "Dry mode — guest list empty until live." : `${admin.guests?.length || 0} guest(s) playing.`}</p>
+
+      ${connectionMeterMarkup(connectionCount)}
+
       <div class="panel panel-pad">
+        <p class="kicker">Your hunt</p>
         <span class="team-name">${escapeHtml(state.user?.gameName || "You")}</span>
         <p class="title-quest" style="margin-top:8px;font-size:2.2rem">${completedCount()} / 10</p>
-        <p class="muted">Gallery export hooks up to R2 when dry mode is off.</p>
       </div>
-      ${admin.guests?.length ? `<p class="muted">${admin.guests.length} guest(s) registered</p>` : ""}
-      <div class="stack">${submissions || `<p class="muted">No local submissions yet.</p>`}</div>
-      <button class="btn btn-secondary btn-full" type="button">Download gallery (soon)</button>
+
+      <div class="host-section">
+        <h3 class="host-section__title">Side quests</h3>
+        <p class="muted">Host-only moments — saved to the archive, not scored.</p>
+        <div class="side-quest-grid">
+          ${(sideQuests || [])
+            .map(
+              (quest) => `
+                <button class="side-quest-btn" type="button" data-side-quest="${escapeHtml(quest.id)}">
+                  <strong>${escapeHtml(quest.title)}</strong>
+                  <span>${escapeHtml(quest.prompt)}</span>
+                </button>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+
+      ${localSide ? `<div class="stack"><p class="kicker">Your side captures</p>${localSide}</div>` : ""}
+
+      <button class="btn btn-ghost btn-full" type="button" data-host-lock>Lock host tools</button>
     </section>
   `;
   screenEnter();
-  document.querySelector("[data-back]").addEventListener("click", renderGame);
+  document.querySelector("[data-back]")?.addEventListener("click", renderGame);
+  document.querySelector("[data-host-lock]")?.addEventListener("click", () => {
+    setHostPin("");
+    renderAdmin();
+  });
+  document.querySelectorAll("[data-side-quest]").forEach((button) => {
+    button.addEventListener("click", () => renderHostSideQuest(button.dataset.sideQuest, sideQuests));
+  });
+}
+
+function renderHostSideQuest(sideQuestId, sideQuests) {
+  const quest = sideQuests.find((item) => item.id === sideQuestId);
+  if (!quest) return;
+
+  let shot = null;
+  app.innerHTML = `
+    ${topbar()}
+    <section class="panel panel-pad stack capture-screen">
+      <button class="btn btn-ghost" type="button" data-back>← Host HQ</button>
+      <p class="kicker">Host side quest</p>
+      <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
+      <p class="lead">${escapeHtml(quest.prompt)}</p>
+      <div class="capture-hero">
+        <div class="capture-frame" data-capture-frame>
+          <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
+          <button type="button" class="cam-big" data-cam-btn aria-label="Open camera">${CAMERA_ICON}</button>
+        </div>
+        <label class="upload-plus" aria-label="Upload photo">
+          <input type="file" data-host-upload accept="image/*">
+          <span>+</span>
+        </label>
+      </div>
+      <label class="field">
+        <span>Caption (optional)</span>
+        <input class="input" name="caption" placeholder="${escapeHtml(quest.title)}">
+      </label>
+      <button class="btn btn-primary btn-full" type="button" data-host-submit disabled>Save side quest</button>
+    </section>
+  `;
+  screenEnter();
+
+  const submitBtn = document.querySelector("[data-host-submit]");
+  const captionEl = document.querySelector("[name='caption']");
+  const feed = document.querySelector("[data-feed]");
+  const frame = document.querySelector("[data-capture-frame]");
+  const camBtn = document.querySelector("[data-cam-btn]");
+
+  function enableSubmit() {
+    submitBtn.disabled = !shot;
+  }
+
+  async function setShot(dataUrl) {
+    shot = dataUrl;
+    enableSubmit();
+  }
+
+  document.querySelector("[data-back]")?.addEventListener("click", () => {
+    stopCamera();
+    renderAdmin();
+  });
+
+  document.querySelector("[data-host-upload]")?.addEventListener("change", async (event) => {
+    const file = event.currentTarget.files?.[0];
+    if (file?.type.startsWith("image/")) setShot(await fileToDataUrl(file));
+  });
+
+  camBtn?.addEventListener("click", async () => {
+    if (cameraStream) {
+      const canvas = document.createElement("canvas");
+      canvas.width = feed.videoWidth || 1080;
+      canvas.height = feed.videoHeight || 1440;
+      canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
+      await setShot(canvas.toDataURL("image/jpeg", 0.85));
+      stopCamera();
+      feed.hidden = true;
+      frame.classList.remove("capture-frame--live");
+      camBtn.classList.remove("cam-big--live");
+      camBtn.innerHTML = CAMERA_ICON;
+      return;
+    }
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+      feed.srcObject = cameraStream;
+      feed.hidden = false;
+      frame.classList.add("capture-frame--live");
+      camBtn.classList.add("cam-big--live");
+      camBtn.innerHTML = "";
+    } catch {
+      showToast("Camera unavailable — tap + to upload.");
+    }
+  });
+
+  submitBtn?.addEventListener("click", async () => {
+    if (!shot) return;
+    const payload = {
+      hostPin: getHostPin(),
+      userId: state.user?.id,
+      sideQuestId: quest.id,
+      caption: captionEl?.value || quest.title,
+      mediaDataUrl: shot.length < 1_400_000 ? shot : ""
+    };
+    try {
+      const result = await api("/api/host/side-quest", { method: "POST", body: JSON.stringify(payload) });
+      if (!state.sideQuestCaptures) state.sideQuestCaptures = [];
+      const { mediaDataUrl: _omit, ...lean } = result.submission;
+      state.sideQuestCaptures.unshift(lean);
+      saveState();
+      showToast(`Side quest saved: ${quest.title}`, true);
+      stopCamera();
+      renderAdmin();
+    } catch (error) {
+      showToast(error.message || "Could not save side quest.");
+    }
+  });
 }
 
 async function boot() {
