@@ -533,14 +533,16 @@ function setCameraLiveUi({ feed, frame, camBtn, flipBtn, live }) {
   if (live) {
     feed.hidden = false;
     frame.classList.add("capture-frame--live");
-    camBtn.classList.add("cam-big--live");
-    camBtn.innerHTML = "";
+    camBtn.classList.remove("cam-big");
+    camBtn.classList.add("cam-shutter");
+    camBtn.innerHTML = SHUTTER_ICON;
     camBtn.setAttribute("aria-label", "Take photo");
     flipBtn?.removeAttribute("hidden");
   } else {
     feed.hidden = true;
     frame.classList.remove("capture-frame--live");
-    camBtn.classList.remove("cam-big--live");
+    camBtn.classList.remove("cam-shutter");
+    camBtn.classList.add("cam-big");
     camBtn.innerHTML = CAMERA_ICON;
     camBtn.setAttribute("aria-label", "Open camera");
     flipBtn?.setAttribute("hidden", "");
@@ -549,6 +551,7 @@ function setCameraLiveUi({ feed, frame, camBtn, flipBtn, live }) {
 
 const CAMERA_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 const FLIP_CAMERA_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7h6l2-3h2l2 3h6v12H3V7z"/><path d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M16 11h4M18 9v4"/></svg>`;
+const SHUTTER_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor"/></svg>`;
 
 function compactField(label, name, placeholder = "", required = true) {
   return `
@@ -609,19 +612,16 @@ function labeledSlotsInlineMarkup(quest) {
 }
 
 function openLabeledSlotCamera(quest, slotIndex, onCapture) {
-  const label = quest.photoSlots[slotIndex];
   stopCamera();
   const overlay = document.createElement("div");
   overlay.className = "pw-modal slot-cam-modal";
   overlay.innerHTML = `
-    <div class="pw-modal__card slot-cam-card" role="dialog" aria-label="Capture ${escapeHtml(label)}">
-      <button class="pw-modal__close" type="button" data-slot-cam-close aria-label="Close">×</button>
-      <p class="kicker">Field capture</p>
-      <h3 class="title-quest slot-cam-title">${escapeHtml(label)}</h3>
+    <div class="pw-modal__card slot-cam-card" role="dialog" aria-label="Camera">
+      <button class="pw-modal__close slot-cam-close" type="button" data-slot-cam-close aria-label="Close">×</button>
       <div class="capture-frame capture-frame--live slot-cam-frame" data-capture-frame>
-        <video class="cam-feed" data-feed playsinline autoplay muted></video>
+        <video class="cam-feed cam-feed--slot" data-feed playsinline autoplay muted></video>
         <button type="button" class="cam-flip" data-cam-flip aria-label="Switch camera">${FLIP_CAMERA_ICON}</button>
-        <button type="button" class="cam-big cam-big--live" data-slot-snap aria-label="Take photo"></button>
+        <button type="button" class="cam-shutter" data-slot-snap aria-label="Take photo">${SHUTTER_ICON}</button>
       </div>
     </div>
   `;
