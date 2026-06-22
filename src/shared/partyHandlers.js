@@ -11,6 +11,8 @@
 import { isDryRun, persistWhenLive } from "./dryRun.js";
 import { findQuestById } from "./quests.js";
 import { samplePartyPosts, sampleLeaderboard } from "./samples.js";
+import { getGameState } from "./gameState.js";
+import { resolveMediaKey, wallImageUrls, wallSlotLabels } from "./wallPosts.js";
 
 const EVENT_ID = "cleo-first-birthday";
 
@@ -71,6 +73,8 @@ function mediaPlaceholder() {
 
 function submissionView(s) {
   const quest = findQuestById(s.quest_id);
+  const requiredFields = safeParse(s.required_fields_json);
+  const imageUrls = wallImageUrls(s.id, s.media_key, requiredFields);
   return {
     id: s.id,
     questSlot: Number(s.quest_slot),
@@ -78,42 +82,61 @@ function submissionView(s) {
     questTitle: quest?.title ?? `Quest ${s.quest_slot}`,
     prompt: quest?.prompt ?? "",
     caption: s.caption || "",
-    requiredFields: safeParse(s.required_fields_json),
-    imageUrl: s.media_key ? `/api/media/${s.id}` : null,
+    requiredFields,
+    imageUrl: imageUrls[0] || null,
+    imageUrls,
+    slotLabels: wallSlotLabels(requiredFields),
     compositionMode: s.composition_mode,
     createdAt: s.created_at
   };
 }
 
-export async function getMedia(env, id) {
-  if (isDryRun(env) || !env.DB || !env.MEDIA_BUCKET) return mediaPlaceholder();
-  try {
-    const sub = await env.DB.prepare("SELECT media_key FROM submissions WHERE id = ?")
-      .bind(id)
-      .first();
-    const key = sub?.media_key;
-    if (!key) return mediaPlaceholder();
-    const obj = await env.MEDIA_BUCKET.get(key);
-    if (!obj) return mediaPlaceholder();
-    const text = await obj.text();
-    const match = text.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
-    if (match) {
-      const mime = match[1] || "image/jpeg";
-      if (match[2] === ";base64") {
-        const bin = atob(match[3]);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-        return new Response(bytes, {
-          headers: { "content-type": mime, "cache-control": "public, max-age=3600" }
-        });
-      }
-      return new Response(match[3], {
+function mediaResponseFromStored(text) {
+  const match = text.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  if (match) {
+    const mime = match[1] || "image/jpeg";
+    if (match[2] === ";base64") {
+      const bin = atob(match[3]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      return new Response(bytes, {
         headers: { "content-type": mime, "cache-control": "public, max-age=3600" }
       });
     }
-    return new Response(text, {
-      headers: { "content-type": "text/plain; charset=utf-8" }
+    return new Response(match[3], {
+      headers: { "content-type": mime, "cache-control": "public, max-age=3600" }
     });
+  }
+  return new Response(text, {
+    headers: { "content-type": "text/plain; charset=utf-8" }
+  });
+}
+
+export async function getMedia(env, mediaPath) {
+  if (isDryRun(env) || !env.DB || !env.MEDIA_BUCKET) return mediaPlaceholder();
+  try {
+    const [submissionId, slotPart] = String(mediaPath || "").split("/slot/");
+    const slotIndex = slotPart !== undefined ? Number(slotPart) : null;
+    if (!submissionId) return mediaPlaceholder();
+
+    const sub = await env.DB.prepare(
+      "SELECT media_key, required_fields_json FROM submissions WHERE id = ?"
+    )
+      .bind(submissionId)
+      .first();
+    if (!sub) return mediaPlaceholder();
+
+    const requiredFields = safeParse(sub.required_fields_json);
+    const key = resolveMediaKey({
+      mediaKey: sub.media_key,
+      requiredFields,
+      slotIndex: Number.isInteger(slotIndex) ? slotIndex : null
+    });
+    if (!key) return mediaPlaceholder();
+
+    const obj = await env.MEDIA_BUCKET.get(key);
+    if (!obj) return mediaPlaceholder();
+    return mediaResponseFromStored(await obj.text());
   } catch {
     return mediaPlaceholder();
   }
@@ -144,6 +167,11 @@ export async function getLeaderboard(env) {
   const userList = users.results || [];
   if (!userList.length) return json({ ...sampleLeaderboard(), dryRun: isDryRun(env) });
 
+  // Stage unlocks are global: they count from the host's "start the game" moment,
+  // not each guest's registration, so everyone shares the same unlock clock.
+  const game = await getGameState(env);
+  const startAt = toEpoch(game.startedAt);
+
   const byUser = new Map();
   for (const s of subs.results || []) {
     if (!byUser.has(s.user_id)) byUser.set(s.user_id, []);
@@ -155,7 +183,6 @@ export async function getLeaderboard(env) {
     const list = byUser.get(u.id) || [];
     const slots = new Map(list.map((s) => [Number(s.quest_slot), s]));
     const score = slots.size;
-    const startAt = toEpoch(u.created_at);
 
     const stageClear = (lo, hi) => {
       let latest = null;
@@ -173,9 +200,8 @@ export async function getLeaderboard(env) {
     const s3 = stageClear(7, 9);
     const s4 = slots.get(10) ? toEpoch(slots.get(10).created_at) : null;
 
-    // Active time per stage = clear − max(scheduled unlock, previous clear).
-    // This makes waiting between unlocks free (social time) and only counts
-    // actual questing, which discourages pure grinding.
+    // Active time per stage = clear − max(scheduled GLOBAL unlock, previous clear).
+    // Waiting between unlocks is free, so mingling is rewarded over grinding.
     const d1 = s1 !== null && startAt !== null ? Math.max(0, (s1 - startAt) / 1000) : null;
     const s2Start = s2 !== null && s1 !== null && startAt !== null
       ? Math.max(startAt + STAGE_UNLOCK_SECONDS[2] * 1000, s1)
@@ -189,7 +215,9 @@ export async function getLeaderboard(env) {
 
     const stages = [d1, d2, d3, d4];
     const finishedAll = s1 !== null && s2 !== null && s3 !== null && s4 !== null;
-    const totalActive = stages.reduce((acc, d) => acc + (d ?? 0), 0);
+    // Cumulative active time = sum of whatever stages this player HAS cleared.
+    // Used as the live tiebreaker behind progress.
+    const cumulativeActive = stages.reduce((acc, d) => acc + (d ?? 0), 0);
 
     entries.push({
       userId: u.id,
@@ -197,7 +225,7 @@ export async function getLeaderboard(env) {
       realName: u.real_name,
       score,
       finishedAll,
-      totalActiveSeconds: finishedAll ? Math.round(totalActive) : null,
+      totalActiveSeconds: Math.round(cumulativeActive),
       stages: stages.map((d) => (d === null ? null : Math.round(d))),
       submissions: list
         .sort((a, b) => Number(a.quest_slot) - Number(b.quest_slot))
@@ -206,21 +234,13 @@ export async function getLeaderboard(env) {
     });
   }
 
-  entries.sort((a, b) => {
-    if (a.finishedAll !== b.finishedAll) return a.finishedAll ? -1 : 1;
-    if (a.totalActiveSeconds !== null && b.totalActiveSeconds !== null) {
-      return a.totalActiveSeconds - b.totalActiveSeconds;
-    }
-    return 0;
-  });
+  // LIVE standings: furthest along first, then least cumulative active time.
+  entries.sort((a, b) => b.score - a.score || a.totalActiveSeconds - b.totalActiveSeconds);
 
-  const finisherIds = new Set(entries.filter((e) => e.finishedAll).slice(0, 10).map((e) => e.userId));
-  const ranked = entries
-    .filter((e) => finisherIds.has(e.userId))
-    .map((e, i) => ({ ...e, rank: i + 1 }));
-  const others = entries
-    .filter((e) => !finisherIds.has(e.userId))
-    .map((e) => ({ ...e, rank: null }));
+  // Only the top 10 get a visible rank; everyone else stays flat but is still
+  // sorted and viewable.
+  const ranked = entries.slice(0, 10).map((e, i) => ({ ...e, rank: i + 1 }));
+  const others = entries.slice(10).map((e) => ({ ...e, rank: null }));
 
   return json({ ranked, others, dryRun: isDryRun(env), sample: false });
 }
@@ -289,6 +309,8 @@ export async function getPartyWall(url, env) {
 
   const posts = list.map((r) => {
     const quest = findQuestById(r.quest_id);
+    const requiredFields = safeParse(r.required_fields_json);
+    const imageUrls = wallImageUrls(r.id, r.media_key, requiredFields);
     return {
       id: r.id,
       userId: r.user_id,
@@ -297,8 +319,10 @@ export async function getPartyWall(url, env) {
       questTitle: quest?.title ?? "Party quest",
       prompt: quest?.prompt ?? "",
       caption: r.caption || "",
-      requiredFields: safeParse(r.required_fields_json),
-      imageUrl: r.media_key ? `/api/media/${r.id}` : null,
+      requiredFields,
+      imageUrl: imageUrls[0] || null,
+      imageUrls,
+      slotLabels: wallSlotLabels(requiredFields),
       createdAt: r.created_at,
       likeCount: r.like_count,
       likedByMe: likedIds.has(r.id),

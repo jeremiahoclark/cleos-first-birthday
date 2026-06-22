@@ -3,6 +3,8 @@ import { createDeviceFingerprint, getClientIp, hashDeviceFingerprint } from "./s
 import { isDryRun, persistWhenLive } from "./shared/dryRun.js";
 import { getConnectionCount, incrementConnectionCount } from "./shared/partyStats.js";
 import { HOST_SIDE_QUESTS, findHostSideQuest } from "./shared/sideQuests.js";
+import { getGameState, startGame, resetGame } from "./shared/gameState.js";
+import { AWARD_CATEGORIES, getAwards, setAward, clearAward } from "./shared/awards.js";
 import {
   getLeaderboard,
   getPartyWall,
@@ -277,6 +279,40 @@ async function submitHostSideQuest(request, env) {
   });
 }
 
+async function startGameHandler(request, env) {
+  const body = await parseJson(request);
+  if (!hostPinValid(env, body.hostPin)) {
+    return json({ error: "Invalid host pin" }, { status: 403 });
+  }
+  const game = await startGame(env);
+  return json({ dryRun: isDryRun(env), game });
+}
+
+async function resetGameHandler(request, env) {
+  const body = await parseJson(request);
+  if (!hostPinValid(env, body.hostPin)) {
+    return json({ error: "Invalid host pin" }, { status: 403 });
+  }
+  const game = await resetGame(env);
+  return json({ dryRun: isDryRun(env), game });
+}
+
+async function getAwardsHandler(env) {
+  return json({ categories: AWARD_CATEGORIES, winners: await getAwards(env) });
+}
+
+async function setAwardHandler(request, env) {
+  const body = await parseJson(request);
+  if (!hostPinValid(env, body.hostPin)) {
+    return json({ error: "Invalid host pin" }, { status: 403 });
+  }
+  const categoryId = String(body.categoryId || "");
+  const winners = body.winner
+    ? await setAward(env, categoryId, body.winner)
+    : await clearAward(env, categoryId);
+  return json({ dryRun: isDryRun(env), categories: AWARD_CATEGORIES, winners });
+}
+
 async function getStatus(env) {
   return json({
     event: {
@@ -285,8 +321,9 @@ async function getStatus(env) {
       durationSeconds: Number(env.GAME_DURATION_SECONDS || 3600)
     },
     dryRun: isDryRun(env),
+    game: await getGameState(env),
     connectionCount: await getConnectionCount(env),
-    // Per-stage unlock thresholds (seconds elapsed since each guest's start).
+    // Per-stage unlock thresholds (seconds elapsed since the host starts the game).
     // Stage 1 = 0; stage 4 (slot 10) is gated on clearing stage 3, not the clock.
     stageUnlocks: STAGE_UNLOCK_SECONDS,
     quests: generateQuestBoard("preview-board")
@@ -343,6 +380,10 @@ export default {
     if (pathname === "/api/connections" && request.method === "POST") return recordConnection(request, env);
     if (pathname === "/api/host/side-quests") return getHostSideQuests();
     if (pathname === "/api/host/side-quest" && request.method === "POST") return submitHostSideQuest(request, env);
+    if (pathname === "/api/host/start" && request.method === "POST") return startGameHandler(request, env);
+    if (pathname === "/api/host/reset" && request.method === "POST") return resetGameHandler(request, env);
+    if (pathname === "/api/awards") return getAwardsHandler(env);
+    if (pathname === "/api/host/award" && request.method === "POST") return setAwardHandler(request, env);
     if (pathname === "/api/feedback" && request.method === "POST") return submitFeedback(request, env);
     if (pathname === "/api/leaderboard") return getLeaderboard(env);
     if (pathname === "/api/party-wall" || pathname === "/api/wall") return getPartyWall(url, env);

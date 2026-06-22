@@ -3,7 +3,21 @@ import assert from "node:assert/strict";
 import { getLeaderboard } from "../src/shared/partyHandlers.js";
 
 // isDryRun is fail-safe ON, so tests must explicitly opt into the live path.
-const LIVE_ENV = { DRY_RUN: "false", BETA_MODE: "false" };
+// The leaderboard counts from the GLOBAL host start now, so the mock KV serves
+// a game:state with startedAt matching the per-test registration time.
+const LIVE_ENV = {
+  DRY_RUN: "false",
+  BETA_MODE: "false",
+  DEVICE_KV: {
+    get: async (key) => {
+      if (key.includes("game:")) {
+        return JSON.stringify({ started: true, startedAt: "2024-06-22 12:00:00" });
+      }
+      return null;
+    },
+    put: async () => {}
+  }
+};
 
 // Tiny D1-shaped mock: distinguishes the two getLeaderboard queries by SQL.
 function mockDb(users, subs) {
@@ -116,21 +130,35 @@ test("a fast stage-1 grind does not beat someone who finished — waiting betwee
   assert.equal(social.totalActiveSeconds - grinder.totalActiveSeconds, 600);
 });
 
-test("incomplete players land in others, unranked, with null stage times", async () => {
+test("live standings rank by progress first, then cumulative active time", async () => {
   const start = "2024-06-22 12:00:00";
-  const users = [{ id: "u2", game_name: "Partway", real_name: "Partway", created_at: start }];
+  const users = [
+    { id: "few", game_name: "Few", real_name: "Few", created_at: start },
+    { id: "more", game_name: "More", real_name: "More", created_at: start }
+  ];
   const subs = [
-    sub("u2", 1, "2024-06-22 12:05:00"),
-    sub("u2", 2, "2024-06-22 12:08:00"),
-    sub("u2", 3, "2024-06-22 12:12:00")
+    // "Few" cleared stage 1 only (3 slots).
+    sub("few", 1, "2024-06-22 12:03:00"),
+    sub("few", 2, "2024-06-22 12:06:00"),
+    sub("few", 3, "2024-06-22 12:09:00"),
+    // "More" cleared stages 1 and 2 (6 slots) — slower per stage but further along.
+    sub("more", 1, "2024-06-22 12:04:00"),
+    sub("more", 2, "2024-06-22 12:07:00"),
+    sub("more", 3, "2024-06-22 12:10:00"),
+    sub("more", 4, "2024-06-22 12:25:00"),
+    sub("more", 5, "2024-06-22 12:28:00"),
+    sub("more", 6, "2024-06-22 12:31:00")
   ];
   const res = await getLeaderboard({ ...LIVE_ENV, DB: mockDb(users, subs) });
   const body = await res.json();
-  assert.equal(body.ranked.length, 0);
-  assert.equal(body.others.length, 1);
-  assert.equal(body.others[0].finishedAll, false);
-  assert.equal(body.others[0].rank, null);
-  assert.equal(body.others[0].totalActiveSeconds, null);
+  // More (6/10) outranks Few (3/10) even though Few was faster per stage.
+  assert.equal(body.ranked[0].gameName, "More");
+  assert.equal(body.ranked[0].score, 6);
+  assert.equal(body.ranked[1].gameName, "Few");
+  assert.equal(body.ranked[1].score, 3);
+  // Cumulative active time is reported even for non-finishers (it's the tiebreak).
+  assert.ok(body.ranked[1].totalActiveSeconds > 0);
+  assert.equal(body.ranked[1].finishedAll, false);
 });
 
 test("empty event falls back to sample data", async () => {

@@ -1,6 +1,7 @@
 import { composeProof, loadImage } from "/compose.js";
 import { initScene } from "/scene.js";
 import { getQuestToast } from "/quest-toasts.js";
+import { wallPostCaption } from "/wallPosts.js";
 
 const app = document.querySelector("#app");
 const gameBg = document.querySelector("#game-bg");
@@ -244,10 +245,19 @@ function renderJoin() {
   document.querySelector("[data-view-leaderboard]")?.addEventListener("click", () => go("leaderboard"));
 }
 
+function gameStartedAt() {
+  const at = status?.game?.startedAt;
+  return at ? Date.parse(at.endsWith("Z") || at.includes("T") ? at : `${at.replace(" ", "T")}Z`) : null;
+}
+function gameStarted() {
+  return !!status?.game?.started;
+}
+
 function timeRemaining() {
   const duration = status?.event?.durationSeconds || 3600;
-  if (!state.startedAt) return duration;
-  const elapsed = Math.floor((Date.now() - state.startedAt) / 1000);
+  const at = gameStartedAt();
+  if (!at) return duration;
+  const elapsed = Math.floor((Date.now() - at) / 1000);
   return Math.max(0, duration - elapsed);
 }
 
@@ -486,6 +496,7 @@ function bindGameEvents() {
 }
 
 let cameraStream = null;
+let cameraFacingMode = "user";
 
 function stopCamera() {
   if (cameraStream) {
@@ -494,7 +505,50 @@ function stopCamera() {
   }
 }
 
+async function startCameraFeed(feed, facingMode = cameraFacingMode) {
+  stopCamera();
+  cameraFacingMode = facingMode;
+  cameraStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: cameraFacingMode } },
+    audio: false
+  });
+  feed.srcObject = cameraStream;
+  return cameraStream;
+}
+
+async function flipCameraFeed(feed) {
+  const next = cameraFacingMode === "user" ? "environment" : "user";
+  await startCameraFeed(feed, next);
+}
+
+function captureFrameFromFeed(feed) {
+  const canvas = document.createElement("canvas");
+  canvas.width = feed.videoWidth || 1080;
+  canvas.height = feed.videoHeight || 1440;
+  canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+function setCameraLiveUi({ feed, frame, camBtn, flipBtn, live }) {
+  if (live) {
+    feed.hidden = false;
+    frame.classList.add("capture-frame--live");
+    camBtn.classList.add("cam-big--live");
+    camBtn.innerHTML = "";
+    camBtn.setAttribute("aria-label", "Take photo");
+    flipBtn?.removeAttribute("hidden");
+  } else {
+    feed.hidden = true;
+    frame.classList.remove("capture-frame--live");
+    camBtn.classList.remove("cam-big--live");
+    camBtn.innerHTML = CAMERA_ICON;
+    camBtn.setAttribute("aria-label", "Open camera");
+    flipBtn?.setAttribute("hidden", "");
+  }
+}
+
 const CAMERA_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+const FLIP_CAMERA_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7h6l2-3h2l2 3h6v12H3V7z"/><path d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M16 11h4M18 9v4"/></svg>`;
 
 function compactField(label, name, placeholder = "", required = true) {
   return `
@@ -529,7 +583,7 @@ function labeledSlotsInlineMarkup(quest) {
           return `
             <div class="labeled-slot ${filled ? "filled" : ""}" data-slot="${index}">
               <label class="slot-thumb" aria-label="${escapeHtml(label)}">
-                <input type="file" class="slot-file" accept="image/*" capture="environment" data-slot-file="${index}">
+                <input type="file" class="slot-file" accept="image/*" capture="user" data-slot-file="${index}">
                 ${
                   filled
                     ? `<img src="${filled}" alt=""><button type="button" class="slot-clear" data-clear-slot="${index}" aria-label="Remove photo">×</button>`
@@ -598,8 +652,8 @@ async function submitLabeledQuest(quest) {
     requiredFields[label] = label;
   });
 
-  const slotImages = shots.map((shot) => (shot.length < 1_400_000 ? shot : ""));
-  const mediaDataUrl = composed.dataUrl.length < 1_400_000 ? composed.dataUrl : "";
+  const slotImages = await Promise.all(shots.map((shot) => uploadableDataUrl(shot)));
+  const mediaDataUrl = await uploadableDataUrl(composed.dataUrl);
 
   const payload = {
     userId: state.user.id,
@@ -656,13 +710,14 @@ function renderCamera(slot) {
               <input type="file" name="media" accept="video/*">
               <span>+</span>
             </label>
-            <input type="file" data-video-capture accept="video/*" capture="environment" hidden>
+            <input type="file" data-video-capture accept="video/*" capture="user" hidden>
           </div>
         `
             : `
           <div class="capture-hero">
             <div class="capture-frame" data-capture-frame>
               <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
+              <button type="button" class="cam-flip" data-cam-flip hidden aria-label="Switch camera">${FLIP_CAMERA_ICON}</button>
               <button type="button" class="cam-big" data-cam-btn aria-label="Open camera">${CAMERA_ICON}</button>
             </div>
             <label class="upload-plus" aria-label="Upload photo">
@@ -772,34 +827,29 @@ function renderCamera(slot) {
     const feed = document.querySelector("[data-feed]");
     const frame = document.querySelector("[data-capture-frame]");
     const camBtn = document.querySelector("[data-cam-btn]");
+    const flipBtn = document.querySelector("[data-cam-flip]");
+
+    flipBtn?.addEventListener("click", async () => {
+      if (!cameraStream) return;
+      try {
+        await flipCameraFeed(feed);
+      } catch {
+        showToast("Couldn't switch camera.");
+      }
+    });
 
     camBtn.addEventListener("click", async () => {
       if (cameraStream) {
-        const canvas = document.createElement("canvas");
-        canvas.width = feed.videoWidth || 1080;
-        canvas.height = feed.videoHeight || 1440;
-        canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
-        addShot(canvas.toDataURL("image/jpeg", 0.85));
+        addShot(captureFrameFromFeed(feed));
         stopCamera();
-        feed.hidden = true;
-        frame.classList.remove("capture-frame--live");
-        camBtn.classList.remove("cam-big--live");
-        camBtn.innerHTML = CAMERA_ICON;
+        setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: false });
         camBtn.setAttribute("aria-label", "Retake photo");
         return;
       }
 
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false
-        });
-        feed.srcObject = cameraStream;
-        feed.hidden = false;
-        frame.classList.add("capture-frame--live");
-        camBtn.classList.add("cam-big--live");
-        camBtn.innerHTML = "";
-        camBtn.setAttribute("aria-label", "Take photo");
+        await startCameraFeed(feed, "user");
+        setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: true });
       } catch {
         showToast("Camera unavailable — tap + to upload.");
       }
@@ -824,7 +874,7 @@ function renderCamera(slot) {
         return;
       }
       // keep the data URL small enough for a demo payload
-      mediaDataUrl = composed.dataUrl.length < 1_400_000 ? composed.dataUrl : "";
+      mediaDataUrl = await uploadableDataUrl(composed.dataUrl);
       compositionMode = compositionSelect?.value || quest.composition;
     }
 
@@ -862,6 +912,34 @@ function layoutLabel(mode) {
       plain: "Plain proof"
     }[mode] || mode
   );
+}
+
+async function compressDataUrl(dataUrl, maxBytes = 1_300_000) {
+  if (!dataUrl || dataUrl.length <= maxBytes) return dataUrl;
+  const img = await loadImage(dataUrl);
+  let width = img.width;
+  let height = img.height;
+  const maxDim = 1600;
+  if (width > maxDim || height > maxDim) {
+    const scale = maxDim / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  for (let quality = 0.85; quality >= 0.45; quality -= 0.1) {
+    ctx.drawImage(img, 0, 0, width, height);
+    const out = canvas.toDataURL("image/jpeg", quality);
+    if (out.length <= maxBytes) return out;
+  }
+  return canvas.toDataURL("image/jpeg", 0.45);
+}
+
+async function uploadableDataUrl(dataUrl) {
+  const compressed = await compressDataUrl(dataUrl);
+  return compressed.length < 1_400_000 ? compressed : "";
 }
 
 function fileToDataUrl(file) {
@@ -975,7 +1053,7 @@ async function renderAdmin() {
         <form id="host-pin-form" class="stack">
           <label class="field">
             <span>Host pin</span>
-            <input class="input" name="hostPin" type="password" inputmode="numeric" autocomplete="off" required>
+            <input class="input" name="hostPin" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" required>
           </label>
           <button class="btn btn-primary btn-full" type="submit">Unlock host tools</button>
         </form>
@@ -1072,6 +1150,7 @@ function renderHostSideQuest(sideQuestId, sideQuests) {
       <div class="capture-hero">
         <div class="capture-frame" data-capture-frame>
           <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
+          <button type="button" class="cam-flip" data-cam-flip hidden aria-label="Switch camera">${FLIP_CAMERA_ICON}</button>
           <button type="button" class="cam-big" data-cam-btn aria-label="Open camera">${CAMERA_ICON}</button>
         </div>
         <label class="upload-plus" aria-label="Upload photo">
@@ -1093,6 +1172,7 @@ function renderHostSideQuest(sideQuestId, sideQuests) {
   const feed = document.querySelector("[data-feed]");
   const frame = document.querySelector("[data-capture-frame]");
   const camBtn = document.querySelector("[data-cam-btn]");
+  const flipBtn = document.querySelector("[data-cam-flip]");
 
   function enableSubmit() {
     submitBtn.disabled = !shot;
@@ -1113,30 +1193,25 @@ function renderHostSideQuest(sideQuestId, sideQuests) {
     if (file?.type.startsWith("image/")) setShot(await fileToDataUrl(file));
   });
 
+  flipBtn?.addEventListener("click", async () => {
+    if (!cameraStream) return;
+    try {
+      await flipCameraFeed(feed);
+    } catch {
+      showToast("Couldn't switch camera.");
+    }
+  });
+
   camBtn?.addEventListener("click", async () => {
     if (cameraStream) {
-      const canvas = document.createElement("canvas");
-      canvas.width = feed.videoWidth || 1080;
-      canvas.height = feed.videoHeight || 1440;
-      canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
-      await setShot(canvas.toDataURL("image/jpeg", 0.85));
+      await setShot(captureFrameFromFeed(feed));
       stopCamera();
-      feed.hidden = true;
-      frame.classList.remove("capture-frame--live");
-      camBtn.classList.remove("cam-big--live");
-      camBtn.innerHTML = CAMERA_ICON;
+      setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: false });
       return;
     }
     try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false
-      });
-      feed.srcObject = cameraStream;
-      feed.hidden = false;
-      frame.classList.add("capture-frame--live");
-      camBtn.classList.add("cam-big--live");
-      camBtn.innerHTML = "";
+      await startCameraFeed(feed, "user");
+      setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: true });
     } catch {
       showToast("Camera unavailable — tap + to upload.");
     }
@@ -1149,7 +1224,7 @@ function renderHostSideQuest(sideQuestId, sideQuests) {
       userId: state.user?.id,
       sideQuestId: quest.id,
       caption: captionEl?.value || quest.title,
-      mediaDataUrl: shot.length < 1_400_000 ? shot : ""
+      mediaDataUrl: await uploadableDataUrl(shot)
     };
     try {
       const result = await api("/api/host/side-quest", { method: "POST", body: JSON.stringify(payload) });
@@ -1176,6 +1251,7 @@ let wallSeen = new Set();
 let wallPostsCache = [];
 let wallPoll = null;
 let wallViewerName = "";
+let leaderboardPoll = null;
 let announcedReveals = { 2: false, 3: false, final: false };
 
 // ---------- Router ----------
@@ -1195,14 +1271,61 @@ function routeFromHash() {
   const view = currentHashView();
   clearInterval(wallPoll);
   wallPoll = null;
+  clearInterval(leaderboardPoll);
+  leaderboardPoll = null;
+  clearInterval(waitingPoll);
+  waitingPoll = null;
   app.classList.remove("party-wide");
   stopCamera();
   if (view === "party-wall") { renderPartyWall(); return; }
   if (view === "leaderboard") { renderLeaderboard(); return; }
   if (!state.user || !state.board) renderJoin();
+  else if (!gameStarted()) renderWaiting();
   else renderGame();
 }
 window.addEventListener("hashchange", routeFromHash);
+
+async function refreshStatus() {
+  try {
+    status = await api("/api/status");
+  } catch {
+    /* keep last known status */
+  }
+  return status;
+}
+
+// ---------- Waiting screen (host hasn't started the game yet) ----------
+let waitingPoll = null;
+function renderWaiting() {
+  clearInterval(waitingPoll);
+  app.innerHTML = `
+    ${topbar()}
+    <section class="panel panel-pad stack end-screen">
+      <div class="join-badge">Treasure hunt · 60 minutes</div>
+      <p class="kicker">Cleo's First Birthday</p>
+      <h1 class="title-display">On standby…</h1>
+      <p class="lead">The host hasn't kicked off the hunt yet. Quests open the moment the game starts — hang tight!</p>
+      <div class="loader-ring" aria-hidden="true"></div>
+      <button class="btn btn-secondary btn-full" type="button" data-view-wall>🪩 Peek the party wall</button>
+      <button class="btn btn-ghost btn-full" type="button" data-reset>Reset phone</button>
+    </section>
+  `;
+  screenEnter();
+  document.querySelector("[data-view-wall]")?.addEventListener("click", () => go("party-wall"));
+  document.querySelector("[data-reset]")?.addEventListener("click", () => {
+    localStorage.removeItem(STORAGE_KEY);
+    Object.assign(state, loadState());
+    clearInterval(waitingPoll);
+    renderJoin();
+  });
+  waitingPoll = setInterval(async () => {
+    await refreshStatus();
+    if (gameStarted()) {
+      clearInterval(waitingPoll);
+      renderGame();
+    }
+  }, 3000);
+}
 
 // ---------- Unlock helpers ----------
 function stageForSlotFn(slot) {
@@ -1216,7 +1339,8 @@ function stageUnlocksMap() {
   return { 1: 0, 2: Number(su[2] ?? 1200), 3: Number(su[3] ?? 2100) };
 }
 function elapsedSeconds() {
-  return state.startedAt ? Math.floor((Date.now() - state.startedAt) / 1000) : 0;
+  const at = gameStartedAt();
+  return at ? Math.floor((Date.now() - at) / 1000) : 0;
 }
 function stage3ClearedState() {
   const done = new Set(state.submissions.map((s) => Number(s.questSlot)));
@@ -1297,6 +1421,7 @@ async function renderPartyWall() {
   wallSeen = new Set();
   wallViewerName = partyViewerName();
   app.innerHTML = `
+    <section class="party-view">
     <header class="pw-header">
       <button class="btn btn-ghost" type="button" data-pw-back>← Back</button>
       <div>
@@ -1309,6 +1434,7 @@ async function renderPartyWall() {
     <div class="pw-grid" data-pw-grid>
       <div class="pw-empty muted">Loading the feed…</div>
     </div>
+    </section>
   `;
   screenEnter();
   document.querySelector("[data-pw-back]")?.addEventListener("click", () => go("game"));
@@ -1331,33 +1457,99 @@ async function pollPartyWall() {
     grid.innerHTML = `<div class="pw-empty muted">No photos yet. The first submissions appear here automatically.</div>`;
     return;
   }
-  const markup = posts.map((p) => wallCardMarkup(p, wallSeen.has(p.id))).join("");
-  for (const p of posts) wallSeen.add(p.id);
-  if (grid.innerHTML !== markup) {
-    grid.innerHTML = markup;
+
+  if (!grid.querySelector("[data-pw-id]")) {
+    grid.innerHTML = posts.map((post) => wallCardMarkup(post, wallSeen.has(post.id))).join("");
+    for (const post of posts) wallSeen.add(post.id);
     bindWallCards();
+    return;
   }
+
+  for (const post of posts) {
+    let card = grid.querySelector(`[data-pw-id="${CSS.escape(post.id)}"]`);
+    if (card) {
+      syncWallCard(card, post);
+    } else {
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = wallCardMarkup(post, wallSeen.has(post.id));
+      card = wrapper.firstElementChild;
+      grid.insertBefore(card, grid.firstChild);
+    }
+    wallSeen.add(post.id);
+  }
+  bindWallCards();
+}
+
+function syncWallCard(card, post) {
+  const caption = wallPostCaption(post);
+  const textEl = card.querySelector(".pw-card__text");
+  if (caption) {
+    if (textEl) textEl.textContent = caption;
+    else {
+      const body = card.querySelector(".pw-card__body");
+      const questEl = body?.querySelector(".pw-card__quest");
+      const p = document.createElement("p");
+      p.className = "pw-card__text";
+      p.textContent = caption;
+      if (questEl?.nextSibling) questEl.after(p);
+      else body?.prepend(p);
+    }
+  } else if (textEl) {
+    textEl.remove();
+  }
+
+  const likeBtn = card.querySelector("[data-pw-like]");
+  if (likeBtn) {
+    likeBtn.classList.toggle("is-liked", Boolean(post.likedByMe));
+    likeBtn.setAttribute("aria-pressed", post.likedByMe ? "true" : "false");
+    const likeSpan = likeBtn.querySelector("span");
+    if (likeSpan) likeSpan.textContent = String(post.likeCount || 0);
+  }
+  const commentBtn = card.querySelector("[data-pw-comments]");
+  if (commentBtn) {
+    const commentSpan = commentBtn.querySelector("span");
+    if (commentSpan) commentSpan.textContent = String(post.commentCount || 0);
+  }
+
+  const media = wallImagesMarkup(post);
+  const mediaWrap = card.querySelector(".pw-card__media");
+  if (mediaWrap && mediaWrap.innerHTML !== media) mediaWrap.innerHTML = media;
+}
+
+function wallImagesMarkup(post) {
+  const urls = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : [];
+  const labels = post.slotLabels || [];
+  if (!urls.length) {
+    return `<div class="pw-card__img pw-card__img--placeholder">🫧</div>`;
+  }
+  if (urls.length === 1) {
+    return `<img class="pw-card__img" src="${escapeHtml(urls[0])}" alt="${escapeHtml(post.questTitle || "party photo")}" loading="lazy" decoding="async">`;
+  }
+  return `
+    <div class="pw-card__gallery">
+      ${urls
+        .map(
+          (url, index) => `
+            <figure class="pw-card__shot">
+              <img class="pw-card__img" src="${escapeHtml(url)}" alt="${escapeHtml(labels[index] || post.questTitle || "party photo")}" loading="lazy" decoding="async">
+              ${labels[index] ? `<figcaption class="pw-card__shot-label">${escapeHtml(labels[index])}</figcaption>` : ""}
+            </figure>`
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function wallPostText(post) {
-  const parts = [];
-  if (post.caption) parts.push(post.caption);
-  const vals = Object.entries(post.requiredFields || {})
-    .map(([, v]) => v)
-    .filter((v) => typeof v === "string" && v && !v.startsWith("events/"));
-  if (vals.length) parts.push(vals.join(" · "));
-  return parts.join(" — ");
+  return wallPostCaption(post);
 }
 
 function wallCardMarkup(post, seen) {
   const text = wallPostText(post);
   const initial = (post.userName || "?").trim().charAt(0).toUpperCase();
-  const img = post.imageUrl
-    ? `<img class="pw-card__img" src="${escapeHtml(post.imageUrl)}" alt="${escapeHtml(post.questTitle || "party photo")}" loading="lazy" decoding="async">`
-    : `<div class="pw-card__img pw-card__img--placeholder">🫧</div>`;
   return `
     <article class="pw-card ${seen ? "" : "pw-card--new"}" data-pw-id="${escapeHtml(post.id)}">
-      ${img}
+      <div class="pw-card__media">${wallImagesMarkup(post)}</div>
       <div class="pw-card__body">
         ${post.questTitle ? `<p class="pw-card__quest">${escapeHtml(post.questTitle)}</p>` : ""}
         ${text ? `<p class="pw-card__text">${escapeHtml(text)}</p>` : ""}
@@ -1374,10 +1566,12 @@ function wallCardMarkup(post, seen) {
 }
 
 function bindWallCards() {
-  document.querySelectorAll("[data-pw-like]").forEach((btn) => {
+  document.querySelectorAll("[data-pw-like]:not([data-bound])").forEach((btn) => {
+    btn.dataset.bound = "1";
     btn.addEventListener("click", () => toggleWallLike(btn.dataset.pwLike, btn));
   });
-  document.querySelectorAll("[data-pw-comments]").forEach((btn) => {
+  document.querySelectorAll("[data-pw-comments]:not([data-bound])").forEach((btn) => {
+    btn.dataset.bound = "1";
     btn.addEventListener("click", () => openWallComments(btn.dataset.pwComments));
   });
 }
@@ -1409,7 +1603,7 @@ function openWallComments(id) {
   overlay.innerHTML = `
     <div class="pw-modal__card" role="dialog" aria-label="Comments">
       <button class="pw-modal__close" type="button" data-pw-close aria-label="Close">×</button>
-      ${post.imageUrl ? `<img class="pw-modal__img" src="${escapeHtml(post.imageUrl)}" alt="">` : ""}
+      ${post.imageUrls?.length || post.imageUrl ? `<div class="pw-modal__media">${wallImagesMarkup(post)}</div>` : ""}
       <div class="pw-modal__body">
         ${post.questTitle ? `<p class="pw-card__quest">${escapeHtml(post.questTitle)}</p>` : ""}
         ${wallPostText(post) ? `<p class="pw-card__text">${escapeHtml(wallPostText(post))}</p>` : ""}
@@ -1473,6 +1667,7 @@ async function renderLeaderboard() {
   const ranked = data.ranked || [];
   const others = data.others || [];
   app.innerHTML = `
+    <section class="party-view">
     <header class="pw-header">
       <button class="btn btn-ghost" type="button" data-lb-back>← Back</button>
       <div>
@@ -1481,16 +1676,21 @@ async function renderLeaderboard() {
       </div>
     </header>
     <p class="muted pw-sub">Ranked by active questing time across stages. Mingling between unlocks is free — grinding doesn't pay.</p>
-    ${data.sample ? `<p class="pill pill--dry" style="margin-bottom:12px">Sample data — clears when guests start playing</p>` : ""}
-    <section class="stack">
+    ${data.sample ? `<p class="pill pill--dry lb-sample">Sample data — clears when guests start playing</p>` : ""}
+    <section class="lb-block">
       <h3 class="lb-section">🏆 Top 10</h3>
-      ${ranked.length ? ranked.map((entry) => rankRowMarkup(entry)).join("") : `<p class="muted">No finishers yet. Be the first to clear all 10.</p>`}
+      <div class="lb-list">
+      ${ranked.length ? ranked.map((entry) => rankRowMarkup(entry)).join("") : `<p class="muted lb-empty">No finishers yet. Be the first to clear all 10.</p>`}
+      </div>
     </section>
     ${others.length ? `
-      <section class="stack" style="margin-top:14px">
+      <section class="lb-block">
         <h3 class="lb-section">Everyone else</h3>
+        <div class="lb-list">
         ${others.map((entry) => otherRowMarkup(entry)).join("")}
+        </div>
       </section>` : ""}
+    </section>
   `;
   screenEnter();
   document.querySelector("[data-lb-back]")?.addEventListener("click", () => go("game"));
