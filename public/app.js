@@ -1408,23 +1408,139 @@ async function refreshStatus() {
 
 // ---------- Waiting screen (host hasn't started the game yet) ----------
 let waitingPoll = null;
+function bindWaitingWallCapture({ feed, preview, frame, camBtn, flipBtn, postBtn, getShot, setShot }) {
+  flipBtn?.addEventListener("click", async () => {
+    if (!cameraStream) return;
+    try {
+      await flipCameraFeed(feed);
+    } catch {
+      showToast("Couldn't switch camera.");
+    }
+  });
+
+  camBtn.addEventListener("click", async () => {
+    if (getShot()) {
+      setShot(null);
+      preview.hidden = true;
+      preview.removeAttribute("src");
+      stopCamera();
+      setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: false });
+      postBtn.disabled = true;
+      return;
+    }
+
+    if (cameraStream) {
+      const dataUrl = captureFrameFromFeed(feed);
+      setShot(dataUrl);
+      preview.src = dataUrl;
+      preview.hidden = false;
+      feed.hidden = true;
+      stopCamera();
+      setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: false });
+      camBtn.setAttribute("aria-label", "Retake photo");
+      postBtn.disabled = false;
+      return;
+    }
+
+    try {
+      await startCameraFeed(feed, "user");
+      preview.hidden = true;
+      setCameraLiveUi({ feed, frame, camBtn, flipBtn, live: true });
+    } catch {
+      showToast("Camera unavailable.");
+    }
+  });
+}
+
 function renderWaiting() {
   clearInterval(waitingPoll);
+  stopCamera();
+  let waitingShot = null;
   app.innerHTML = `
     ${topbar()}
-    <section class="panel panel-pad stack end-screen">
+    <section class="panel panel-pad stack waiting-screen">
       <div class="join-badge">Treasure hunt · 60 minutes</div>
       <p class="kicker">Cleo's First Birthday</p>
       <h1 class="title-display">On standby…</h1>
-      <p class="lead">The host hasn't kicked off the hunt yet. Quests open the moment the game starts — hang tight!</p>
+      <p class="lead">The host hasn't kicked off the hunt yet. Warm up the party wall while you wait.</p>
       <div class="loader-ring" aria-hidden="true"></div>
+
+      <div class="waiting-wall stack">
+        <p class="kicker">Party wall warmup</p>
+        <p class="muted waiting-wall-lead">Snap a photo, add a caption, and it'll show on the live wall.</p>
+        <div class="capture-hero waiting-capture">
+          <div class="capture-frame" data-capture-frame>
+            <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
+            <img class="wait-preview" data-wait-preview alt="" hidden>
+            <button type="button" class="cam-flip" data-cam-flip hidden aria-label="Switch camera">${FLIP_CAMERA_ICON}</button>
+            <button type="button" class="cam-big" data-wait-cam aria-label="Open camera">${CAMERA_ICON}</button>
+          </div>
+        </div>
+        <label class="field-compact">
+          <span class="field-ask">Caption</span>
+          <input class="input-compact" data-wait-caption placeholder="Say hi to Cleo…" maxlength="280">
+        </label>
+        <button class="btn btn-primary btn-full" type="button" data-wait-post disabled>Post to party wall</button>
+      </div>
+
       <button class="btn btn-secondary btn-full" type="button" data-view-wall>🪩 Peek the party wall</button>
       <button class="btn btn-ghost btn-full" type="button" data-reset>Reset phone</button>
     </section>
   `;
   screenEnter();
+
+  const feed = document.querySelector("[data-feed]");
+  const preview = document.querySelector("[data-wait-preview]");
+  const frame = document.querySelector("[data-capture-frame]");
+  const camBtn = document.querySelector("[data-wait-cam]");
+  const flipBtn = document.querySelector("[data-cam-flip]");
+  const captionEl = document.querySelector("[data-wait-caption]");
+  const postBtn = document.querySelector("[data-wait-post]");
+
+  bindWaitingWallCapture({
+    feed,
+    preview,
+    frame,
+    camBtn,
+    flipBtn,
+    postBtn,
+    getShot: () => waitingShot,
+    setShot: (value) => {
+      waitingShot = value;
+    }
+  });
+
+  postBtn.addEventListener("click", async () => {
+    if (!waitingShot) return;
+    postBtn.disabled = true;
+    try {
+      const payload = {
+        userId: state.user?.id,
+        boardId: state.board?.id,
+        caption: captionEl?.value || "",
+        mediaDataUrl: await uploadableDataUrl(waitingShot)
+      };
+      const result = await api("/api/wall-post", { method: "POST", body: JSON.stringify(payload) });
+      if (result.dryRun) {
+        showToast("Posted locally — dry mode won't show on the shared wall yet.");
+      } else {
+        showToast("Posted to the party wall!", true);
+      }
+      waitingShot = null;
+      preview.hidden = true;
+      preview.removeAttribute("src");
+      captionEl.value = "";
+      camBtn.setAttribute("aria-label", "Open camera");
+      postBtn.disabled = true;
+    } catch (error) {
+      postBtn.disabled = false;
+      showToast(error.message || "Could not post to the wall.");
+    }
+  });
+
   document.querySelector("[data-view-wall]")?.addEventListener("click", () => go("party-wall"));
   document.querySelector("[data-reset]")?.addEventListener("click", () => {
+    stopCamera();
     localStorage.removeItem(STORAGE_KEY);
     Object.assign(state, loadState());
     clearInterval(waitingPoll);
@@ -1433,6 +1549,7 @@ function renderWaiting() {
   waitingPoll = setInterval(async () => {
     await refreshStatus();
     if (gameStarted()) {
+      stopCamera();
       clearInterval(waitingPoll);
       renderGame();
     }

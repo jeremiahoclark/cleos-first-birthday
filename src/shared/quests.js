@@ -1,3 +1,5 @@
+import { WALL_WARMUP_QUEST } from "./wallWarmup.js";
+
 export const QUEST_STAGES = [
   {
     stage: 1,
@@ -242,6 +244,7 @@ export function generateQuestBoard(seed) {
 
 export function findQuestById(id) {
   if (!id) return null;
+  if (WALL_WARMUP_QUEST.id === id) return WALL_WARMUP_QUEST;
   if (FINAL_QUEST.id === id) return FINAL_QUEST;
   for (const stage of QUEST_STAGES) {
     for (const pair of stage.slots) {

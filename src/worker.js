@@ -4,6 +4,7 @@ import { isDryRun, persistWhenLive } from "./shared/dryRun.js";
 import { getConnectionCount, incrementConnectionCount } from "./shared/partyStats.js";
 import { HOST_SIDE_QUESTS, findHostSideQuest } from "./shared/sideQuests.js";
 import { getGameState, startGame, resetGame } from "./shared/gameState.js";
+import { WALL_WARMUP_QUEST, WALL_WARMUP_STATUS } from "./shared/wallWarmup.js";
 import { AWARD_CATEGORIES, getAwards, setAward, clearAward } from "./shared/awards.js";
 import {
   getLeaderboard,
@@ -279,6 +280,76 @@ async function submitHostSideQuest(request, env) {
   });
 }
 
+async function submitWallWarmup(request, env) {
+  const body = await parseJson(request);
+  const game = await getGameState(env);
+  if (game.started) {
+    return json({ error: "The hunt has started — post quest photos instead." }, { status: 400 });
+  }
+
+  const userId = String(body.userId || "");
+  const boardId = String(body.boardId || body.teamId || userId);
+  const mediaDataUrl = String(body.mediaDataUrl || "");
+  if (!userId || !boardId || !mediaDataUrl) {
+    return json({ error: "userId, boardId, and mediaDataUrl are required" }, { status: 400 });
+  }
+
+  const submission = {
+    id: makeId(isDryRun(env) ? "dry_wall" : "wall_submission"),
+    eventId: EVENT_ID,
+    boardId,
+    userId,
+    questSlot: 0,
+    questId: WALL_WARMUP_QUEST.id,
+    caption: String(body.caption || "").trim(),
+    requiredFields: {},
+    compositionMode: "plain",
+    mediaName: "waiting-room.jpg",
+    mediaDataUrl,
+    status: WALL_WARMUP_STATUS,
+    createdAt: new Date().toISOString()
+  };
+
+  const mediaKey = `events/${EVENT_ID}/guests/${submission.userId}/${submission.id}`;
+  const persistence = await persistWhenLive(env, async () => {
+    if (submission.mediaDataUrl && env.MEDIA_BUCKET) {
+      await env.MEDIA_BUCKET.put(mediaKey, submission.mediaDataUrl, {
+        httpMetadata: { contentType: "text/plain; charset=utf-8" }
+      });
+    }
+    await env.DB.prepare(
+      `INSERT INTO submissions
+       (id, event_id, team_id, user_id, quest_slot, quest_id, caption, required_fields_json, media_key, composition_mode, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        submission.id,
+        EVENT_ID,
+        submission.boardId,
+        submission.userId,
+        submission.questSlot,
+        submission.questId,
+        submission.caption,
+        JSON.stringify(submission.requiredFields),
+        mediaKey,
+        submission.compositionMode,
+        submission.status
+      )
+      .run();
+    return { mediaKey };
+  });
+
+  return json({
+    dryRun: isDryRun(env),
+    persisted: persistence.persisted,
+    submission: {
+      ...submission,
+      mediaDataUrl: isDryRun(env) ? submission.mediaDataUrl : undefined,
+      mediaKey
+    }
+  });
+}
+
 async function startGameHandler(request, env) {
   const body = await parseJson(request);
   if (!hostPinValid(env, body.hostPin)) {
@@ -377,6 +448,7 @@ export default {
     if (pathname === "/api/status") return getStatus(env);
     if (pathname === "/api/register" && request.method === "POST") return registerUser(request, env);
     if (pathname === "/api/submissions" && request.method === "POST") return submitQuest(request, env);
+    if (pathname === "/api/wall-post" && request.method === "POST") return submitWallWarmup(request, env);
     if (pathname === "/api/connections" && request.method === "POST") return recordConnection(request, env);
     if (pathname === "/api/host/side-quests") return getHostSideQuests();
     if (pathname === "/api/host/side-quest" && request.method === "POST") return submitHostSideQuest(request, env);

@@ -1406,6 +1406,56 @@ video.preview[hidden] {
   padding: 18px 16px;
 }
 
+.waiting-screen .loader-ring {
+  margin: 4px auto 8px;
+}
+
+.waiting-wall {
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--panel-border);
+}
+
+.waiting-wall-lead {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
+.waiting-capture {
+  min-height: 0;
+  padding: 10px;
+}
+
+.waiting-capture .capture-frame {
+  width: 100%;
+}
+
+.waiting-capture .cam-feed,
+.wait-preview {
+  width: 100%;
+  max-height: 42vh;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  border: 2px solid rgba(255, 143, 171, 0.35);
+  background: #f0e8ee;
+}
+
+.wait-preview[hidden],
+.waiting-capture .cam-feed[hidden] {
+  display: none;
+}
+
+.wait-preview:not([hidden]) {
+  display: block;
+}
+
+.waiting-capture .cam-big {
+  width: min(56vw, 160px);
+  height: min(56vw, 160px);
+}
+
 /* Toast & effects */
 .toast {
   position: fixed;
