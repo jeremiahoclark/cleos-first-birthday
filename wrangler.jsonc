@@ -14,8 +14,8 @@
     // Dry mode is the safety default. It is ON unless set to the exact string
     // "false". DRY_RUN and BETA_MODE are aliases; either keeps writes blocked,
     // so BOTH must read "false" to enable live D1/KV/R2 writes.
-    "DRY_RUN": "true",
-    "BETA_MODE": "true",
+    "DRY_RUN": "false",
+    "BETA_MODE": "false",
     "EVENT_NAME": "Cleo's First Birthday Quest",
     "GAME_DURATION_SECONDS": "3600",
     "HOST_PIN": "cleo"
