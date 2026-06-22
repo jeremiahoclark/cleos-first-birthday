@@ -86,49 +86,60 @@ function submissionView(s) {
 }
 
 export async function getMedia(env, id) {
-  if (!env.DB || !env.MEDIA_BUCKET) return mediaPlaceholder();
-  const sub = await env.DB.prepare("SELECT media_key FROM submissions WHERE id = ?")
-    .bind(id)
-    .first();
-  const key = sub?.media_key;
-  if (!key) return mediaPlaceholder();
-  const obj = await env.MEDIA_BUCKET.get(key);
-  if (!obj) return mediaPlaceholder();
-  const text = await obj.text();
-  const match = text.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
-  if (match) {
-    const mime = match[1] || "image/jpeg";
-    if (match[2] === ";base64") {
-      const bin = atob(match[3]);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-      return new Response(bytes, {
+  if (isDryRun(env) || !env.DB || !env.MEDIA_BUCKET) return mediaPlaceholder();
+  try {
+    const sub = await env.DB.prepare("SELECT media_key FROM submissions WHERE id = ?")
+      .bind(id)
+      .first();
+    const key = sub?.media_key;
+    if (!key) return mediaPlaceholder();
+    const obj = await env.MEDIA_BUCKET.get(key);
+    if (!obj) return mediaPlaceholder();
+    const text = await obj.text();
+    const match = text.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+    if (match) {
+      const mime = match[1] || "image/jpeg";
+      if (match[2] === ";base64") {
+        const bin = atob(match[3]);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+        return new Response(bytes, {
+          headers: { "content-type": mime, "cache-control": "public, max-age=3600" }
+        });
+      }
+      return new Response(match[3], {
         headers: { "content-type": mime, "cache-control": "public, max-age=3600" }
       });
     }
-    return new Response(match[3], {
-      headers: { "content-type": mime, "cache-control": "public, max-age=3600" }
+    return new Response(text, {
+      headers: { "content-type": "text/plain; charset=utf-8" }
     });
+  } catch {
+    return mediaPlaceholder();
   }
-  return new Response(text, {
-    headers: { "content-type": "text/plain; charset=utf-8" }
-  });
 }
 
 export async function getLeaderboard(env) {
-  if (!env.DB) return json({ ...sampleLeaderboard(), dryRun: true });
+  if (isDryRun(env) || !env.DB) return json({ ...sampleLeaderboard(), dryRun: isDryRun(env) });
 
-  const [users, subs] = await Promise.all([
-    env.DB.prepare("SELECT id, game_name, real_name, created_at FROM users WHERE event_id = ?")
-      .bind(EVENT_ID)
-      .all(),
-    env.DB.prepare(
-      `SELECT user_id, quest_slot, quest_id, caption, required_fields_json, media_key, composition_mode, created_at
-       FROM submissions WHERE event_id = ? AND status != 'rejected'`
-    )
-      .bind(EVENT_ID)
-      .all()
-  ]);
+  let users;
+  let subs;
+  try {
+    [users, subs] = await Promise.all([
+      env.DB.prepare("SELECT id, game_name, real_name, created_at FROM users WHERE event_id = ?")
+        .bind(EVENT_ID)
+        .all(),
+      env.DB.prepare(
+        `SELECT user_id, quest_slot, quest_id, caption, required_fields_json, media_key, composition_mode, created_at
+         FROM submissions WHERE event_id = ? AND status != 'rejected'`
+      )
+        .bind(EVENT_ID)
+        .all()
+    ]);
+  } catch {
+    // Schema not migrated yet — show samples instead of a 500.
+    return json({ ...sampleLeaderboard(), dryRun: false });
+  }
 
   const userList = users.results || [];
   if (!userList.length) return json({ ...sampleLeaderboard(), dryRun: isDryRun(env) });
@@ -217,25 +228,32 @@ export async function getLeaderboard(env) {
 export async function getPartyWall(url, env) {
   const userName = (url.searchParams.get("userName") || "").trim();
 
-  if (!env.DB) return json({ posts: samplePartyPosts(), dryRun: true, sample: true });
+  if (isDryRun(env) || !env.DB) {
+    return json({ posts: samplePartyPosts(), dryRun: isDryRun(env), sample: true });
+  }
 
-  const rows = await env.DB.prepare(
-    `SELECT s.id, s.user_id, s.quest_id, s.caption, s.required_fields_json, s.media_key, s.composition_mode, s.created_at,
-            u.game_name,
-            (SELECT COUNT(*) FROM likes l WHERE l.submission_id = s.id) AS like_count,
-            (SELECT COUNT(*) FROM comments c WHERE c.submission_id = s.id) AS comment_count
-     FROM submissions s
-     LEFT JOIN users u ON u.id = s.user_id
-     WHERE s.event_id = ? AND s.status != 'rejected'
-     ORDER BY s.created_at DESC
-     LIMIT 200`
-  )
-    .bind(EVENT_ID)
-    .all();
+  let rows;
+  try {
+    rows = await env.DB.prepare(
+      `SELECT s.id, s.user_id, s.quest_id, s.caption, s.required_fields_json, s.media_key, s.composition_mode, s.created_at,
+              u.game_name,
+              (SELECT COUNT(*) FROM likes l WHERE l.submission_id = s.id) AS like_count,
+              (SELECT COUNT(*) FROM comments c WHERE c.submission_id = s.id) AS comment_count
+       FROM submissions s
+       LEFT JOIN users u ON u.id = s.user_id
+       WHERE s.event_id = ? AND s.status != 'rejected'
+       ORDER BY s.created_at DESC
+       LIMIT 200`
+    )
+      .bind(EVENT_ID)
+      .all();
+  } catch {
+    return json({ posts: samplePartyPosts(), dryRun: false, sample: true });
+  }
 
   const list = rows.results || [];
   if (!list.length) {
-    return json({ posts: samplePartyPosts(), dryRun: isDryRun(env), sample: true });
+    return json({ posts: samplePartyPosts(), dryRun: false, sample: true });
   }
 
   const ids = list.map((r) => r.id);
@@ -321,7 +339,7 @@ export async function toggleLike(request, env) {
   });
 
   let likeCount = liked ? 1 : 0;
-  if (env.DB) {
+  if (!isDryRun(env) && env.DB) {
     const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM likes WHERE submission_id = ?")
       .bind(submissionId)
       .first();

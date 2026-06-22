@@ -69,26 +69,35 @@ export function samplePartyPosts() {
 }
 
 export function sampleLeaderboard() {
-  const finishMinutes = [23, 27, 31, 34, 38, 42, 46, 51, 55, 58];
-  const ranked = finishMinutes.map((m, i) => ({
-    rank: i + 1,
-    userId: null,
-    gameName: SAMPLE_NAMES[i % SAMPLE_NAMES.length],
-    realName: SAMPLE_NAMES[i % SAMPLE_NAMES.length],
-    score: 10,
-    durationSeconds: m * 60 + (i * 7) % 60,
-    finishedAt: new Date(Date.now() - (10 - i) * 1000 * 60).toISOString(),
-    submissions: [],
-    sample: true
-  }));
+  const totals = [23, 27, 31, 34, 38, 42, 46, 51, 55, 58]; // active minutes
+  const ranked = totals.map((m, i) => {
+    const total = m * 60 + ((i * 7) % 60);
+    const s1 = Math.round(total * 0.28);
+    const s2 = Math.round(total * 0.22);
+    const s3 = Math.round(total * 0.35);
+    const s4 = total - s1 - s2 - s3;
+    return {
+      rank: i + 1,
+      userId: null,
+      gameName: SAMPLE_NAMES[i % SAMPLE_NAMES.length],
+      realName: SAMPLE_NAMES[i % SAMPLE_NAMES.length],
+      score: 10,
+      finishedAll: true,
+      totalActiveSeconds: total,
+      stages: [s1, s2, s3, s4],
+      submissions: [],
+      sample: true
+    };
+  });
   const others = SAMPLE_NAMES.slice(2).map((name, i) => ({
     rank: null,
     userId: null,
     gameName: name,
     realName: name,
     score: 4 + ((i * 2) % 6),
-    durationSeconds: null,
-    finishedAt: null,
+    finishedAll: false,
+    totalActiveSeconds: null,
+    stages: [null, null, null, null],
     submissions: [],
     sample: true
   }));

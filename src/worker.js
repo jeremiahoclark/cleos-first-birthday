@@ -2,7 +2,7 @@ import { generateQuestBoard, scoreSubmissions } from "./shared/quests.js";
 import { createDeviceFingerprint, getClientIp, hashDeviceFingerprint } from "./shared/device.js";
 import { isDryRun, persistWhenLive } from "./shared/dryRun.js";
 import { getConnectionCount, incrementConnectionCount } from "./shared/partyStats.js";
-import { HOST_SIDE_QUESTS } from "./shared/sideQuests.js";
+import { HOST_SIDE_QUESTS, findHostSideQuest } from "./shared/sideQuests.js";
 import {
   getLeaderboard,
   getPartyWall,

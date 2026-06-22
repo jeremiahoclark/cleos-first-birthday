@@ -215,6 +215,10 @@ function renderJoin() {
         </label>
         <button class="btn btn-primary btn-full" type="submit">Start the hunt</button>
       </form>
+      <div class="hud-footer">
+        <button class="link-btn" type="button" data-view-wall>🪩 Party wall</button>
+        <button class="link-btn" type="button" data-view-leaderboard>🏆 Leaderboard</button>
+      </div>
       <p class="muted">No login — this phone remembers you.${status?.dryRun ? " Dry mode: nothing hits Cloudflare." : ""}</p>
     </section>
   `;
@@ -236,6 +240,8 @@ function renderJoin() {
     showToast(`Let's go, ${result.user.gameName}!`, true);
     renderGame();
   });
+  document.querySelector("[data-view-wall]")?.addEventListener("click", () => go("party-wall"));
+  document.querySelector("[data-view-leaderboard]")?.addEventListener("click", () => go("leaderboard"));
 }
 
 function timeRemaining() {
@@ -305,16 +311,23 @@ function progressNav(quests) {
   return `
     <div class="treasure-trail" aria-label="Treasure trail — 10 quests">
       ${quests
-        .map(
-          (quest) => `
+        .map((quest) => {
+          const locked = !slotUnlocked(quest.slot);
+          const label = isComplete(quest.slot)
+            ? `Treasure ${quest.slot} found`
+            : locked
+              ? `Treasure ${quest.slot} locked`
+              : `Treasure ${quest.slot}`;
+          return `
             <button
-              class="trail-node ${quest.slot === activeQuestSlot ? "active" : ""} ${isComplete(quest.slot) ? "done" : ""}"
+              class="trail-node ${quest.slot === activeQuestSlot ? "active" : ""} ${isComplete(quest.slot) ? "done" : ""} ${locked ? "locked" : ""}"
               type="button"
-              data-jump-slot="${quest.slot}"
-              aria-label="Treasure ${quest.slot}${isComplete(quest.slot) ? " found" : ""}"
+              ${locked ? "disabled" : `data-jump-slot="${quest.slot}"`}
+              aria-label="${label}"
+              ${locked ? `title="${quest.slot === 10 ? "Opens after stage 3" : `Opens in ${formatClock(slotUnlockCountdown(quest.slot))}`}"` : ""}
             >${isComplete(quest.slot) ? "" : quest.slot}</button>
-          `
-        )
+          `;
+        })
         .join("")}
     </div>
   `;
@@ -369,17 +382,21 @@ function renderGame() {
   stopCamera();
   clearInterval(timerHandle);
   const quests = state.board.quests || status.quests;
-  if (!quests.some((quest) => Number(quest.slot) === Number(activeQuestSlot))) {
-    activeQuestSlot = nextOpenQuestSlot(quests);
+  const current = quests.find((quest) => Number(quest.slot) === Number(activeQuestSlot));
+  if (!current || isComplete(current.slot) || !slotUnlocked(current.slot)) {
+    activeQuestSlot = nextUnlockedOpenSlot(quests);
   }
   const activeQuest = quests.find((quest) => Number(quest.slot) === Number(activeQuestSlot)) || quests[0];
   app.innerHTML = `
     ${topbar()}
     ${timerMarkup()}
     ${progressNav(quests)}
+    ${unlockBannerMarkup()}
     ${activeQuestView(activeQuest, quests)}
     ${feedbackMarkup()}
     <div class="hud-footer">
+      <button class="link-btn" data-view-wall>🪩 Wall</button>
+      <button class="link-btn" data-view-leaderboard>🏆 Scores</button>
       <button class="link-btn link-btn--host" data-view-admin>Host view</button>
       <button class="link-btn" data-reset>Reset phone</button>
     </div>
@@ -401,6 +418,12 @@ function updateTimer() {
   const circumference = 2 * Math.PI * 30;
   timer.textContent = formatTime(remaining);
   ring.setAttribute("stroke-dashoffset", String(circumference * (1 - progress)));
+
+  // Stage reveal moments: celebrate exactly when a new tier unlocks.
+  const _su = stageUnlocksMap();
+  const _e = elapsedSeconds();
+  if (_e >= _su[2] && !announcedReveals[2]) { announcedReveals[2] = true; revealStage(2); }
+  if (_e >= _su[3] && !announcedReveals[3]) { announcedReveals[3] = true; revealStage(3); }
 
   if (remaining <= 0) {
     clearInterval(timerHandle);
@@ -443,9 +466,11 @@ function bindGameEvents() {
     });
   });
   document.querySelector("[data-next-open]")?.addEventListener("click", () => {
-    activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
+    activeQuestSlot = nextUnlockedOpenSlot(state.board.quests || status.quests);
     renderGame();
   });
+  document.querySelector("[data-view-wall]")?.addEventListener("click", () => go("party-wall"));
+  document.querySelector("[data-view-leaderboard]")?.addEventListener("click", () => go("leaderboard"));
   document.querySelector("[data-view-admin]")?.addEventListener("click", renderAdmin);
   document.querySelector("[data-reset]")?.addEventListener("click", () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -595,9 +620,10 @@ async function submitLabeledQuest(quest) {
   state.submissions = state.submissions.filter((submission) => Number(submission.questSlot) !== Number(quest.slot));
   const { mediaDataUrl: _omit, slotImages: _slots, ...lean } = result.submission;
   state.submissions.push(lean);
-  activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
+  activeQuestSlot = nextUnlockedOpenSlot(state.board.quests || status.quests);
   saveState();
   await celebrateQuestSubmit(quest);
+  maybeRevealFinal();
   renderGame();
 }
 
@@ -819,9 +845,10 @@ function renderCamera(slot) {
     // Persist metadata only — composed data URLs are too large for localStorage.
     const { mediaDataUrl: _omit, ...lean } = result.submission;
     state.submissions.push(lean);
-    activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
+    activeQuestSlot = nextUnlockedOpenSlot(state.board.quests || status.quests);
     saveState();
     await celebrateQuestSubmit(quest);
+    maybeRevealFinal();
     renderGame();
   });
 }
@@ -1139,11 +1166,410 @@ function renderHostSideQuest(sideQuestId, sideQuests) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Party Wall (live feed) + Leaderboard + staggered quest unlocks
+// ---------------------------------------------------------------------------
+
+const PARTY_POLL_MS = 5000;
+const WALL_NAME_KEY = "cleoWallName:v1";
+let wallSeen = new Set();
+let wallPostsCache = [];
+let wallPoll = null;
+let wallViewerName = "";
+let announcedReveals = { 2: false, 3: false, final: false };
+
+// ---------- Router ----------
+function currentHashView() {
+  const h = (location.hash || "").replace(/^#/, "");
+  return h === "party-wall" || h === "leaderboard" ? h : "game";
+}
+function go(view) {
+  if (view === "game") {
+    history.pushState(null, "", location.pathname);
+    routeFromHash();
+  } else {
+    location.hash = view;
+  }
+}
+function routeFromHash() {
+  const view = currentHashView();
+  clearInterval(wallPoll);
+  wallPoll = null;
+  app.classList.remove("party-wide");
+  stopCamera();
+  if (view === "party-wall") { renderPartyWall(); return; }
+  if (view === "leaderboard") { renderLeaderboard(); return; }
+  if (!state.user || !state.board) renderJoin();
+  else renderGame();
+}
+window.addEventListener("hashchange", routeFromHash);
+
+// ---------- Unlock helpers ----------
+function stageForSlotFn(slot) {
+  if (slot <= 3) return 1;
+  if (slot <= 6) return 2;
+  if (slot <= 9) return 3;
+  return 4;
+}
+function stageUnlocksMap() {
+  const su = status?.stageUnlocks || {};
+  return { 1: 0, 2: Number(su[2] ?? 1200), 3: Number(su[3] ?? 2100) };
+}
+function elapsedSeconds() {
+  return state.startedAt ? Math.floor((Date.now() - state.startedAt) / 1000) : 0;
+}
+function stage3ClearedState() {
+  const done = new Set(state.submissions.map((s) => Number(s.questSlot)));
+  return [7, 8, 9].every((s) => done.has(s));
+}
+function slotUnlocked(slot) {
+  const stage = stageForSlotFn(slot);
+  if (stage === 1) return true;
+  const e = elapsedSeconds();
+  const su = stageUnlocksMap();
+  if (stage === 2) return e >= su[2];
+  if (stage === 3) return e >= su[3];
+  return stage3ClearedState(); // slot 10: gated on clearing stage 3
+}
+function slotUnlockCountdown(slot) {
+  const su = stageUnlocksMap();
+  const stage = stageForSlotFn(slot);
+  if (stage === 2) return Math.max(0, su[2] - elapsedSeconds());
+  if (stage === 3) return Math.max(0, su[3] - elapsedSeconds());
+  return 0;
+}
+function nextUnlockedOpenSlot(quests) {
+  const open = quests.filter((q) => !isComplete(q.slot) && slotUnlocked(q.slot));
+  if (open.length) return open[0].slot;
+  const unlocked = quests.find((q) => slotUnlocked(q.slot));
+  return unlocked?.slot || quests[0]?.slot || 1;
+}
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
+  return m === 0 ? `${sec}s` : `${m}m ${sec.toString().padStart(2, "0")}s`;
+}
+
+// Reveal "moments" when a stage unlocks or the final treasure opens up.
+function nextUnlockBanner() {
+  const su = stageUnlocksMap();
+  const e = elapsedSeconds();
+  if (e < su[2]) return { label: "Stage 2 · treasures 4–6", at: su[2] };
+  if (e < su[3]) return { label: "Stage 3 · treasures 7–9", at: su[3] };
+  if (!stage3ClearedState()) return { label: "The final treasure", at: null };
+  return null;
+}
+function unlockBannerMarkup() {
+  const u = nextUnlockBanner();
+  if (!u) return "";
+  const when = u.at ? `in ${formatClock(Math.max(0, u.at - elapsedSeconds()))}` : "after clearing stage 3";
+  return `<div class="unlock-banner">⏳ <strong>${u.label}</strong> opens ${when}.</div>`;
+}
+function revealStage(stage) {
+  const labels = { 2: "Stage 2 just unlocked — treasures 4–6 are live!", 3: "Stage 3 unlocked — the hard-mode set (7–9) is go." };
+  showToast(labels[stage] || "New stage unlocked!", true);
+}
+function maybeRevealFinal() {
+  if (announcedReveals.final) return;
+  if (stage3ClearedState()) {
+    announcedReveals.final = true;
+    showToast("Final treasure unlocked — the Future Advice Council awaits.", true);
+  }
+}
+
+// ---------- Party Wall ----------
+function partyViewerName() {
+  return state.user?.gameName || localStorage.getItem(WALL_NAME_KEY) || "";
+}
+function ensureWallName() {
+  let name = partyViewerName();
+  if (name) return name;
+  name = (window.prompt("What's your party nickname?", "") || "").trim();
+  if (name) localStorage.setItem(WALL_NAME_KEY, name);
+  return name || "";
+}
+
+async function renderPartyWall() {
+  clearInterval(wallPoll);
+  app.classList.add("party-wide");
+  wallSeen = new Set();
+  wallViewerName = partyViewerName();
+  app.innerHTML = `
+    <header class="pw-header">
+      <button class="btn btn-ghost" type="button" data-pw-back>← Back</button>
+      <div>
+        <p class="kicker">Live feed</p>
+        <h2 class="title-quest">Party Wall</h2>
+      </div>
+      <span class="pw-live-dot" aria-hidden="true"></span>
+    </header>
+    <p class="muted pw-sub">Fresh from the hunt. New photos land here in real time — perfect on the TV.</p>
+    <div class="pw-grid" data-pw-grid>
+      <div class="pw-empty muted">Loading the feed…</div>
+    </div>
+  `;
+  screenEnter();
+  document.querySelector("[data-pw-back]")?.addEventListener("click", () => go("game"));
+  await pollPartyWall();
+  wallPoll = setInterval(pollPartyWall, PARTY_POLL_MS);
+}
+
+async function pollPartyWall() {
+  let data;
+  try {
+    data = await api(`/api/party-wall?userName=${encodeURIComponent(wallViewerName)}`);
+  } catch {
+    return;
+  }
+  const posts = data.posts || [];
+  wallPostsCache = posts;
+  const grid = document.querySelector("[data-pw-grid]");
+  if (!grid) return;
+  if (!posts.length) {
+    grid.innerHTML = `<div class="pw-empty muted">No photos yet. The first submissions appear here automatically.</div>`;
+    return;
+  }
+  const markup = posts.map((p) => wallCardMarkup(p, wallSeen.has(p.id))).join("");
+  for (const p of posts) wallSeen.add(p.id);
+  if (grid.innerHTML !== markup) {
+    grid.innerHTML = markup;
+    bindWallCards();
+  }
+}
+
+function wallPostText(post) {
+  const parts = [];
+  if (post.caption) parts.push(post.caption);
+  const vals = Object.entries(post.requiredFields || {})
+    .map(([, v]) => v)
+    .filter((v) => typeof v === "string" && v && !v.startsWith("events/"));
+  if (vals.length) parts.push(vals.join(" · "));
+  return parts.join(" — ");
+}
+
+function wallCardMarkup(post, seen) {
+  const text = wallPostText(post);
+  const initial = (post.userName || "?").trim().charAt(0).toUpperCase();
+  const img = post.imageUrl
+    ? `<img class="pw-card__img" src="${escapeHtml(post.imageUrl)}" alt="${escapeHtml(post.questTitle || "party photo")}" loading="lazy" decoding="async">`
+    : `<div class="pw-card__img pw-card__img--placeholder">🫧</div>`;
+  return `
+    <article class="pw-card ${seen ? "" : "pw-card--new"}" data-pw-id="${escapeHtml(post.id)}">
+      ${img}
+      <div class="pw-card__body">
+        ${post.questTitle ? `<p class="pw-card__quest">${escapeHtml(post.questTitle)}</p>` : ""}
+        ${text ? `<p class="pw-card__text">${escapeHtml(text)}</p>` : ""}
+        <div class="pw-card__foot">
+          <span class="pw-user"><span class="pw-avatar">${escapeHtml(initial)}</span>${escapeHtml(post.userName || "Guest")}</span>
+          <div class="pw-actions">
+            <button class="pw-chip ${post.likedByMe ? "is-liked" : ""}" type="button" data-pw-like="${escapeHtml(post.id)}" aria-pressed="${post.likedByMe ? "true" : "false"}">♥ <span>${post.likeCount || 0}</span></button>
+            <button class="pw-chip" type="button" data-pw-comments="${escapeHtml(post.id)}">💬 <span>${post.commentCount || 0}</span></button>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function bindWallCards() {
+  document.querySelectorAll("[data-pw-like]").forEach((btn) => {
+    btn.addEventListener("click", () => toggleWallLike(btn.dataset.pwLike, btn));
+  });
+  document.querySelectorAll("[data-pw-comments]").forEach((btn) => {
+    btn.addEventListener("click", () => openWallComments(btn.dataset.pwComments));
+  });
+}
+
+async function toggleWallLike(id, btn) {
+  const name = ensureWallName();
+  if (!name) return;
+  const span = btn.querySelector("span");
+  const liked = btn.classList.contains("is-liked");
+  btn.classList.toggle("is-liked", !liked);
+  btn.setAttribute("aria-pressed", String(!liked));
+  span.textContent = String(Math.max(0, Number(span.textContent || 0) + (liked ? -1 : 1)));
+  try {
+    const res = await api("/api/likes", { method: "POST", body: JSON.stringify({ submissionId: id, userName: name }) });
+    btn.classList.toggle("is-liked", res.liked);
+    btn.setAttribute("aria-pressed", String(res.liked));
+    span.textContent = String(res.likeCount);
+  } catch {
+    btn.classList.toggle("is-liked", liked);
+    span.textContent = String(Math.max(0, Number(span.textContent || 0) + (liked ? 1 : -1)));
+  }
+}
+
+function openWallComments(id) {
+  const post = wallPostsCache.find((p) => p.id === id);
+  if (!post) return;
+  const overlay = document.createElement("div");
+  overlay.className = "pw-modal";
+  overlay.innerHTML = `
+    <div class="pw-modal__card" role="dialog" aria-label="Comments">
+      <button class="pw-modal__close" type="button" data-pw-close aria-label="Close">×</button>
+      ${post.imageUrl ? `<img class="pw-modal__img" src="${escapeHtml(post.imageUrl)}" alt="">` : ""}
+      <div class="pw-modal__body">
+        ${post.questTitle ? `<p class="pw-card__quest">${escapeHtml(post.questTitle)}</p>` : ""}
+        ${wallPostText(post) ? `<p class="pw-card__text">${escapeHtml(wallPostText(post))}</p>` : ""}
+        <p class="pw-user"><span class="pw-avatar">${escapeHtml((post.userName || "?").charAt(0).toUpperCase())}</span>${escapeHtml(post.userName || "Guest")}</p>
+        <div class="pw-comments" data-pw-comment-list>
+          ${(post.comments || [])
+            .map(
+              (c) => `<div class="pw-comment"><span class="pw-avatar sm">${escapeHtml((c.userName || "?").charAt(0).toUpperCase())}</span><div><strong>${escapeHtml(c.userName || "Guest")}</strong><p>${escapeHtml(c.body)}</p></div></div>`
+            )
+            .join("") || `<p class="muted">No comments yet.</p>`}
+        </div>
+        <form class="pw-comment-form" data-pw-comment-form>
+          <input class="input-compact" name="body" placeholder="Add a comment…" required maxlength="1000">
+          <button class="btn btn-primary" type="submit">Post</button>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("show"));
+  const close = () => {
+    overlay.classList.remove("show");
+    setTimeout(() => overlay.remove(), 200);
+  };
+  overlay.querySelector("[data-pw-close]").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("[data-pw-comment-form]").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = (form.get("body") || "").trim();
+    if (!body) return;
+    const name = ensureWallName();
+    if (!name) return;
+    try {
+      const res = await api("/api/comments", { method: "POST", body: JSON.stringify({ submissionId: id, userName: name, body }) });
+      const list = overlay.querySelector("[data-pw-comment-list]");
+      const empty = list.querySelector(".muted");
+      if (empty) list.innerHTML = "";
+      const node = document.createElement("div");
+      node.className = "pw-comment";
+      node.innerHTML = `<span class="pw-avatar sm">${escapeHtml((res.comment.userName || "?").charAt(0).toUpperCase())}</span><div><strong>${escapeHtml(res.comment.userName)}</strong><p>${escapeHtml(res.comment.body)}</p></div>`;
+      list.appendChild(node);
+      form.reset();
+      const chip = document.querySelector(`[data-pw-comments="${id}"] span`);
+      if (chip) chip.textContent = String((Number(chip.textContent) || 0) + 1);
+    } catch {
+      showToast("Comment didn't post — try again.");
+    }
+  });
+}
+
+// ---------- Leaderboard ----------
+async function renderLeaderboard() {
+  app.classList.remove("party-wide");
+  let data;
+  try {
+    data = await api("/api/leaderboard");
+  } catch {
+    data = { ranked: [], others: [] };
+  }
+  const ranked = data.ranked || [];
+  const others = data.others || [];
+  app.innerHTML = `
+    <header class="pw-header">
+      <button class="btn btn-ghost" type="button" data-lb-back>← Back</button>
+      <div>
+        <p class="kicker">Standings</p>
+        <h2 class="title-quest">Leaderboard</h2>
+      </div>
+    </header>
+    <p class="muted pw-sub">Ranked by active questing time across stages. Mingling between unlocks is free — grinding doesn't pay.</p>
+    ${data.sample ? `<p class="pill pill--dry" style="margin-bottom:12px">Sample data — clears when guests start playing</p>` : ""}
+    <section class="stack">
+      <h3 class="lb-section">🏆 Top 10</h3>
+      ${ranked.length ? ranked.map((entry) => rankRowMarkup(entry)).join("") : `<p class="muted">No finishers yet. Be the first to clear all 10.</p>`}
+    </section>
+    ${others.length ? `
+      <section class="stack" style="margin-top:14px">
+        <h3 class="lb-section">Everyone else</h3>
+        ${others.map((entry) => otherRowMarkup(entry)).join("")}
+      </section>` : ""}
+  `;
+  screenEnter();
+  document.querySelector("[data-lb-back]")?.addEventListener("click", () => go("game"));
+  const all = [...ranked, ...others];
+  document.querySelectorAll("[data-lb-user]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const entry = all.find((e) => (e.userId || "") === row.dataset.lbUser);
+      if (entry) openPlayerSubmissions(entry);
+    });
+  });
+}
+
+function rankRowMarkup(entry) {
+  const total = entry.totalActiveSeconds ?? 0;
+  const breakdown = (entry.stages || [])
+    .map((s, i) => (s == null ? null : `<span class="lb-stage">S${i + 1} ${formatClock(s)}</span>`))
+    .filter(Boolean)
+    .join("");
+  return `
+    <button class="lb-row lb-row--ranked" type="button" data-lb-user="${escapeHtml(entry.userId || "")}">
+      <span class="lb-rank">${entry.rank}</span>
+      <span class="lb-name">${escapeHtml(entry.gameName)}</span>
+      <span class="lb-time">${formatClock(total)}</span>
+      <span class="lb-score">${entry.score}/10</span>
+      <span class="lb-stages">${breakdown}</span>
+    </button>
+  `;
+}
+
+function otherRowMarkup(entry) {
+  return `
+    <button class="lb-row" type="button" data-lb-user="${escapeHtml(entry.userId || "")}">
+      <span class="lb-name">${escapeHtml(entry.gameName)}</span>
+      <span class="lb-score">${entry.score}/10 treasures</span>
+    </button>
+  `;
+}
+
+function openPlayerSubmissions(entry) {
+  const overlay = document.createElement("div");
+  overlay.className = "pw-modal";
+  const subs = entry.submissions || [];
+  overlay.innerHTML = `
+    <div class="pw-modal__card pw-modal__card--wide" role="dialog" aria-label="${escapeHtml(entry.gameName)} submissions">
+      <button class="pw-modal__close" type="button" data-pw-close aria-label="Close">×</button>
+      <p class="kicker">${escapeHtml(entry.gameName)}</p>
+      <h3 class="title-quest">${entry.finishedAll ? `${formatClock(entry.totalActiveSeconds || 0)} active` : `${entry.score}/10 treasures`}</h3>
+      <div class="lb-submissions">
+        ${subs.length
+          ? subs.map((s) => `
+              <div class="lb-sub">
+                ${s.imageUrl ? `<img class="lb-sub__img" src="${escapeHtml(s.imageUrl)}" alt="" loading="lazy">` : `<div class="lb-sub__img pw-card__img--placeholder">🫧</div>`}
+                <div class="lb-sub__meta">
+                  <strong>Q${s.questSlot} · ${escapeHtml(s.questTitle || "")}</strong>
+                  ${s.caption ? `<p>${escapeHtml(s.caption)}</p>` : ""}
+                  ${Object.values(s.requiredFields || {})
+                    .filter((v) => v && !String(v).startsWith("events/"))
+                    .map((v) => `<span class="lb-tag">${escapeHtml(v)}</span>`)
+                    .join("")}
+                </div>
+              </div>`).join("")
+          : `<p class="muted">No viewable submissions yet.</p>`}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("show"));
+  const close = () => {
+    overlay.classList.remove("show");
+    setTimeout(() => overlay.remove(), 200);
+  };
+  overlay.querySelector("[data-pw-close]").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+}
+
 async function boot() {
   initScene(gameBg);
   status = await api("/api/status");
-  if (!state.user || !state.board) renderJoin();
-  else renderGame();
+  routeFromHash();
 }
 
 boot().catch((error) => {
