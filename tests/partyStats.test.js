@@ -12,7 +12,7 @@ test("connection counter increments in dry mode", async () => {
 });
 
 test("host side quests are defined and discoverable", () => {
-  assert.ok(HOST_SIDE_QUESTS.length >= 3);
+  assert.equal(HOST_SIDE_QUESTS.length, 1);
   const quest = findHostSideQuest("host-cake-moment");
   assert.ok(quest);
   assert.equal(quest.title, "Cake Moment");

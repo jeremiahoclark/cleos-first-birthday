@@ -731,13 +731,7 @@ button {
 }
 
 .slot-file {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-  z-index: 2;
+  display: none;
 }
 
 .slot-thumb img {
@@ -780,6 +774,52 @@ button {
   border: 2px dashed rgba(255, 143, 171, 0.38);
   background: rgba(255, 255, 255, 0.75);
   overflow: hidden;
+}
+
+.slot-thumb--camera {
+  width: 100%;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 140ms var(--ease-pop), border-color 140ms;
+}
+
+.slot-thumb--camera:active {
+  transform: scale(0.97);
+}
+
+.slot-thumb--filled {
+  width: 100%;
+}
+
+.slot-cam-icon {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--pink-deep);
+}
+
+.slot-cam-icon svg {
+  width: 34%;
+  height: 34%;
+}
+
+.slot-cam-card {
+  width: min(100%, 420px);
+}
+
+.slot-cam-title {
+  font-size: 1.35rem;
+  margin: 0 0 10px;
+}
+
+.slot-cam-frame {
+  width: 100%;
+}
+
+.slot-cam-frame .cam-feed {
+  display: block;
+  width: 100%;
 }
 
 .slot-thumb img {
@@ -1261,6 +1301,83 @@ video.preview[hidden] {
 
 .side-quest-btn:active {
   transform: scale(0.99);
+}
+
+.btn-start-hunt {
+  width: 100%;
+  min-height: 132px;
+  padding: 28px 20px;
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 11vw, 3rem);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  border-radius: var(--radius-lg);
+  color: white;
+  background: linear-gradient(145deg, var(--pink), var(--pink-deep));
+  box-shadow: var(--glow-pink);
+  transition: transform 180ms var(--ease-pop), box-shadow 180ms;
+}
+
+.btn-start-hunt:active {
+  transform: scale(0.98);
+}
+
+.host-pill {
+  margin: 0;
+}
+
+.host-live-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: rgba(126, 212, 184, 0.16);
+  border: 1px solid rgba(126, 212, 184, 0.45);
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  color: var(--ink);
+}
+
+.host-guest-list {
+  display: grid;
+  gap: 8px;
+}
+
+.host-guest-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--panel-border);
+}
+
+.host-guest-name {
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-guest-score {
+  flex-shrink: 0;
+  font-weight: 800;
+  color: var(--pink-deep);
+}
+
+.host-guest-empty {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.side-quest-btn--solo {
+  padding: 18px 16px;
 }
 
 /* Toast & effects */

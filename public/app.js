@@ -379,7 +379,7 @@ function activeQuestView(quest, quests) {
           <button class="btn btn-ghost" type="button" data-jump-slot="${previous}">← Prev</button>
           ${
             labeledSlots && !complete
-              ? `<span class="quest-nav-hint">Tap each + to add a photo</span>`
+              ? `<span class="quest-nav-hint">Tap each camera to capture</span>`
               : `<button class="btn btn-secondary" type="button" data-jump-slot="${next}">Next →</button>`
           }
         </div>
@@ -582,14 +582,20 @@ function labeledSlotsInlineMarkup(quest) {
           const filled = draft[index];
           return `
             <div class="labeled-slot ${filled ? "filled" : ""}" data-slot="${index}">
-              <label class="slot-thumb" aria-label="${escapeHtml(label)}">
-                <input type="file" class="slot-file" accept="image/*" capture="user" data-slot-file="${index}">
-                ${
-                  filled
-                    ? `<img src="${filled}" alt=""><button type="button" class="slot-clear" data-clear-slot="${index}" aria-label="Remove photo">×</button>`
-                    : `<span class="slot-plus">+</span>`
-                }
-              </label>
+              ${
+                filled
+                  ? `
+                <div class="slot-thumb slot-thumb--filled" aria-label="${escapeHtml(label)}">
+                  <img src="${filled}" alt="">
+                  <button type="button" class="slot-clear" data-clear-slot="${index}" aria-label="Remove photo">×</button>
+                </div>
+              `
+                  : `
+                <button type="button" class="slot-thumb slot-thumb--camera" data-slot-cam="${index}" aria-label="Capture ${escapeHtml(label)}">
+                  <span class="slot-cam-icon">${CAMERA_ICON}</span>
+                </button>
+              `
+              }
               <span class="slot-label">${escapeHtml(label)}</span>
             </div>
           `;
@@ -602,17 +608,68 @@ function labeledSlotsInlineMarkup(quest) {
   `;
 }
 
+function openLabeledSlotCamera(quest, slotIndex, onCapture) {
+  const label = quest.photoSlots[slotIndex];
+  stopCamera();
+  const overlay = document.createElement("div");
+  overlay.className = "pw-modal slot-cam-modal";
+  overlay.innerHTML = `
+    <div class="pw-modal__card slot-cam-card" role="dialog" aria-label="Capture ${escapeHtml(label)}">
+      <button class="pw-modal__close" type="button" data-slot-cam-close aria-label="Close">×</button>
+      <p class="kicker">Field capture</p>
+      <h3 class="title-quest slot-cam-title">${escapeHtml(label)}</h3>
+      <div class="capture-frame capture-frame--live slot-cam-frame" data-capture-frame>
+        <video class="cam-feed" data-feed playsinline autoplay muted></video>
+        <button type="button" class="cam-flip" data-cam-flip aria-label="Switch camera">${FLIP_CAMERA_ICON}</button>
+        <button type="button" class="cam-big cam-big--live" data-slot-snap aria-label="Take photo"></button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("show"));
+
+  const feed = overlay.querySelector("[data-feed]");
+  const close = () => {
+    stopCamera();
+    overlay.classList.remove("show");
+    setTimeout(() => overlay.remove(), 200);
+  };
+
+  overlay.querySelector("[data-slot-cam-close]").addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+
+  overlay.querySelector("[data-cam-flip]")?.addEventListener("click", async () => {
+    try {
+      await flipCameraFeed(feed);
+    } catch {
+      showToast("Couldn't switch camera.");
+    }
+  });
+
+  overlay.querySelector("[data-slot-snap]")?.addEventListener("click", () => {
+    onCapture(captureFrameFromFeed(feed));
+    close();
+  });
+
+  startCameraFeed(feed, "user").catch(() => {
+    showToast("Camera unavailable.");
+    close();
+  });
+}
+
 function bindInlineLabeledSlots(quest) {
   const draft = getSlotDraft(quest.slot, quest.photoSlots.length);
 
-  document.querySelectorAll("[data-slot-file]").forEach((input) => {
-    input.addEventListener("change", async () => {
-      const index = Number(input.dataset.slotFile);
-      const file = input.files?.[0];
-      if (!file?.type.startsWith("image/")) return;
-      draft[index] = await fileToDataUrl(file);
-      saveState();
-      renderGame();
+  document.querySelectorAll("[data-slot-cam]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.slotCam);
+      openLabeledSlotCamera(quest, index, (dataUrl) => {
+        draft[index] = dataUrl;
+        saveState();
+        renderGame();
+      });
     });
   });
 
@@ -1049,7 +1106,7 @@ async function renderAdmin() {
         <button class="btn btn-ghost" type="button" data-back>← Back</button>
         <p class="kicker">Host view</p>
         <h2 class="title-quest">Host unlock</h2>
-        <p class="lead">Enter the host pin to capture side quests and see the guest board.</p>
+        <p class="lead">Enter the host pin to start the hunt, see guests, and capture the cake moment.</p>
         <form id="host-pin-form" class="stack">
           <label class="field">
             <span>Host pin</span>
@@ -1070,6 +1127,8 @@ async function renderAdmin() {
     return;
   }
 
+  await refreshStatus();
+
   let admin = { dryRun: true, guests: [], submissions: [] };
   let sideQuests = [];
   try {
@@ -1078,6 +1137,8 @@ async function renderAdmin() {
     /* host tools still work locally in dry mode */
   }
 
+  const guests = admin.guests || [];
+  const started = gameStarted();
   const connectionCount = status?.connectionCount ?? 0;
   const localSide = (state.sideQuestCaptures || [])
     .map(
@@ -1092,24 +1153,31 @@ async function renderAdmin() {
       <button class="btn btn-ghost" type="button" data-back>← Back</button>
       <p class="kicker">Host view</p>
       <h2 class="title-quest">Party HQ</h2>
-      <p class="lead">${admin.dryRun ? "Dry mode — guest list empty until live." : `${admin.guests?.length || 0} guest(s) playing.`}</p>
+      <p class="lead">${hostStatusLead(admin, guests.length)}</p>
+
+      ${admin.dryRun ? `<p class="pill pill--dry host-pill">Dry mode — writes blocked on worker</p>` : ""}
 
       ${connectionMeterMarkup(connectionCount)}
 
-      <div class="panel panel-pad">
-        <p class="kicker">Your hunt</p>
-        <span class="team-name">${escapeHtml(state.user?.gameName || "You")}</span>
-        <p class="title-quest" style="margin-top:8px;font-size:2.2rem">${completedCount()} / 10</p>
+      ${
+        started
+          ? `<div class="host-live-banner"><span class="pw-live-dot" aria-hidden="true"></span><span>Hunt is live · ${formatClock(timeRemaining())} left</span></div>`
+          : `<button class="btn btn-start-hunt" type="button" data-host-start>Start the hunt</button>`
+      }
+
+      <div class="host-section">
+        <h3 class="host-section__title">Guests</h3>
+        ${hostGuestListMarkup(guests, admin.dryRun)}
       </div>
 
       <div class="host-section">
-        <h3 class="host-section__title">Side quests</h3>
-        <p class="muted">Host-only moments — saved to the archive, not scored.</p>
+        <h3 class="host-section__title">Cake moment</h3>
+        <p class="muted">Host-only capture — saved to the archive, not scored.</p>
         <div class="side-quest-grid">
           ${(sideQuests || [])
             .map(
               (quest) => `
-                <button class="side-quest-btn" type="button" data-side-quest="${escapeHtml(quest.id)}">
+                <button class="side-quest-btn side-quest-btn--solo" type="button" data-side-quest="${escapeHtml(quest.id)}">
                   <strong>${escapeHtml(quest.title)}</strong>
                   <span>${escapeHtml(quest.prompt)}</span>
                 </button>
@@ -1130,9 +1198,53 @@ async function renderAdmin() {
     setHostPin("");
     renderAdmin();
   });
+  document.querySelector("[data-host-start]")?.addEventListener("click", async () => {
+    try {
+      const result = await api("/api/host/start", {
+        method: "POST",
+        body: JSON.stringify({ hostPin: getHostPin() })
+      });
+      status = { ...status, game: result.game };
+      showToast("Hunt started — guests can play!", true);
+      renderAdmin();
+    } catch (error) {
+      showToast(error.message || "Could not start the hunt.");
+    }
+  });
   document.querySelectorAll("[data-side-quest]").forEach((button) => {
     button.addEventListener("click", () => renderHostSideQuest(button.dataset.sideQuest, sideQuests));
   });
+}
+
+function hostStatusLead(admin, guestCount) {
+  if (admin.dryRun) {
+    return "Practice mode. Guest list and submissions appear once the worker runs live (DRY_RUN and BETA_MODE both false).";
+  }
+  if (!guestCount) return "No guests joined yet — share the link, then hit Start when you're ready.";
+  return `${guestCount} guest${guestCount === 1 ? "" : "s"} on the board.`;
+}
+
+function hostGuestListMarkup(guests, dryRun) {
+  if (dryRun) {
+    return `<p class="muted host-guest-empty">Guest names show up here in the live worker after people register.</p>`;
+  }
+  if (!guests.length) {
+    return `<p class="muted host-guest-empty">Waiting for the first guest to join…</p>`;
+  }
+  return `
+    <div class="host-guest-list">
+      ${guests
+        .map(
+          (guest) => `
+            <div class="host-guest-row">
+              <span class="host-guest-name">${escapeHtml(guest.game_name || guest.real_name || "Guest")}</span>
+              <span class="host-guest-score">${Number(guest.score || 0)}/10</span>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function renderHostSideQuest(sideQuestId, sideQuests) {
