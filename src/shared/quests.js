@@ -14,11 +14,11 @@ export const QUEST_STAGES = [
         },
         {
           id: "tiny-welcoming-committee",
-          title: "The Tiny Welcoming Committee",
+          title: "The First Week Friend",
           composition: "caption",
           prompt:
-            "Find two guests who are meeting Cleo for the first time today. Submit a photo of them with Cleo or near the birthday setup.",
-          requiredFields: ["Guest names", "One word each guest uses to describe Cleo"]
+            "Find a person (who's not the parents) who met Cleo in her first week of life. Submit a photo with them.",
+          requiredFields: ["Person's name", "Their memory from that first week"]
         }
       ],
       [
@@ -77,17 +77,17 @@ export const QUEST_STAGES = [
           title: "The Circle Crossover",
           composition: "caption",
           prompt:
-            "Submit a photo with four guests from four different relationship circles, such as family, friend, neighbor, coworker, church, school, or parent group.",
-          requiredFields: ["Each guest's relationship circle"]
+            "Submit a photo with four guests from four different relationship circles in Regina or Logan's worlds — such as family, friends, neighbors, coworkers, church, school, or parent groups.",
+          requiredFields: ["Each guest's circle (Regina or Logan)"]
         }
       ],
       [
         {
           id: "farthest-traveler",
-          title: "The Farthest Traveler",
+          title: "The Out-of-State Traveler",
           composition: "caption",
           prompt:
-            "Find someone who traveled far to attend. Ask where they came from and one thing they hope Cleo gets from this party.",
+            "Find a guest who arrived from out of state. Ask where they came from and one thing they hope Cleo gets from this party.",
           requiredFields: ["Where they came from", "Their wish for Cleo"]
         },
         {
@@ -130,8 +130,8 @@ export const QUEST_STAGES = [
           composition: "plain",
           mediaType: "video",
           prompt:
-            "Record a 15-second video message for Cleo to watch years from now. At least three guests from different households must appear or speak.",
-          requiredFields: ["Speaker names"]
+            "Record a 15-second video message for Cleo to watch years from now — just you, on camera.",
+          requiredFields: ["Your name"]
         },
         {
           id: "mini-documentary",
@@ -157,8 +157,15 @@ export const QUEST_STAGES = [
           title: "The First Birthday Field Notes",
           composition: "collage",
           prompt:
-            "Submit a five-photo set from a baby's-eye view: something colorful, something loud, something sweet, someone laughing, and Cleo being celebrated.",
-          requiredFields: ["What each photo shows"]
+            "Capture a five-photo set from a baby's-eye view — one shot for each label below.",
+          photoSlots: [
+            "Something colorful",
+            "Something loud",
+            "Something sweet",
+            "Someone laughing",
+            "Cleo being celebrated"
+          ],
+          requiredFields: []
         }
       ],
       [
@@ -191,6 +198,10 @@ export const FINAL_QUEST = {
     "Collect advice for future Cleo from five guests across different ages or life stages. Submit a group photo with at least three of them.",
   requiredFields: ["Five advice lines"]
 };
+
+export function getQuestPhotoSlots(quest) {
+  return Array.isArray(quest?.photoSlots) && quest.photoSlots.length ? quest.photoSlots : null;
+}
 
 export function createSeededRandom(seed = "cleo") {
   let hash = 2166136261;

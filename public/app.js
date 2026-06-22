@@ -239,9 +239,10 @@ function progressNav(quests) {
 
 function activeQuestView(quest, quests) {
   const complete = isComplete(quest.slot);
-  const requirements = quest.requiredFields
-    .map((field) => `<div class="loot-item">${escapeHtml(field)}</div>`)
-    .join("");
+  const labeledSlots = hasLabeledSlots(quest);
+  const requirements = labeledSlots
+    ? quest.photoSlots.map((label) => `<div class="loot-item">${escapeHtml(label)}</div>`).join("")
+    : quest.requiredFields.map((field) => `<div class="loot-item">${escapeHtml(field)}</div>`).join("");
   const previous = quest.slot > 1 ? quest.slot - 1 : quests.length;
   const next = quest.slot < quests.length ? quest.slot + 1 : 1;
   return `
@@ -252,7 +253,7 @@ function activeQuestView(quest, quests) {
       </div>
       <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
       <p class="quest-prompt">${escapeHtml(quest.prompt)}</p>
-      <div class="loot-list">${requirements}</div>
+      ${requirements ? `<div class="loot-list">${requirements}</div>` : ""}
       <div class="quest-actions">
         ${
           complete
@@ -263,11 +264,17 @@ function activeQuestView(quest, quests) {
             </div>
             <button class="btn btn-primary btn-full" data-next-open>Next treasure</button>
           `
-            : `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Capture proof</button>`
+            : labeledSlots
+              ? `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Add all ${quest.photoSlots.length} photos</button>`
+              : `<button class="btn btn-primary btn-capture btn-full" data-open-camera="${quest.slot}">Capture proof</button>`
         }
-        <div class="quest-nav">
+        <div class="quest-nav ${labeledSlots && !complete ? "quest-nav--single" : ""}">
           <button class="btn btn-ghost" type="button" data-jump-slot="${previous}">← Prev</button>
-          <button class="btn btn-secondary" type="button" data-jump-slot="${next}">Next →</button>
+          ${
+            labeledSlots && !complete
+              ? `<span class="quest-nav-hint">Fill every slot, then submit all</span>`
+              : `<button class="btn btn-secondary" type="button" data-jump-slot="${next}">Next →</button>`
+          }
         </div>
       </div>
     </section>
@@ -375,17 +382,236 @@ function stopCamera() {
 
 const CAMERA_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 
-function compactField(label, name, placeholder = "") {
+function compactField(label, name, placeholder = "", required = true) {
   return `
     <label class="field-compact">
       <span class="field-ask">${escapeHtml(label)}</span>
-      <input class="input-compact" name="${name}" placeholder="${escapeHtml(placeholder)}" required>
+      <input class="input-compact" name="${name}" placeholder="${escapeHtml(placeholder)}" ${required ? "required" : ""}>
     </label>
   `;
 }
 
+function hasLabeledSlots(quest) {
+  return Array.isArray(quest.photoSlots) && quest.photoSlots.length > 0;
+}
+
+function renderLabeledSlotCamera(slot, quest, slotLabels) {
+  const shots = Array(slotLabels.length).fill(null);
+  let activeSlot = 0;
+  let composed = null;
+
+  app.innerHTML = `
+    ${topbar()}
+    <section class="panel panel-pad stack capture-screen">
+      <button class="btn btn-ghost" type="button" data-back>← Back</button>
+      <p class="kicker">Treasure ${quest.slot}</p>
+      <h2 class="title-quest">${escapeHtml(quest.title)}</h2>
+      <p class="lead">${escapeHtml(quest.prompt)}</p>
+
+      <form id="submission-form" class="stack">
+        <div class="capture-hero capture-hero--slots">
+          <div class="capture-frame" data-capture-frame>
+            <video class="cam-feed" data-feed playsinline autoplay muted hidden></video>
+            <button type="button" class="cam-big" data-cam-btn aria-label="Open camera">${CAMERA_ICON}</button>
+          </div>
+          <label class="upload-plus" aria-label="Upload photo for active slot">
+            <input type="file" name="upload" accept="image/*">
+            <span>+</span>
+          </label>
+        </div>
+
+        <div class="labeled-slots" data-labeled-slots>
+          ${slotLabels
+            .map(
+              (label, index) => `
+                <div class="labeled-slot ${index === 0 ? "active" : ""}" data-slot="${index}" role="button" tabindex="0">
+                  <span class="slot-thumb" data-slot-thumb="${index}">
+                    <span class="slot-plus">+</span>
+                  </span>
+                  <span class="slot-label">${escapeHtml(label)}</span>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+
+        <select name="compositionMode" hidden aria-hidden="true">
+          <option value="collage" selected>Collage / set</option>
+        </select>
+        <img data-composed alt="" hidden>
+
+        <div class="capture-fields">
+          ${compactField("Caption", "caption", "Optional note for Cleo's parents…", false)}
+        </div>
+
+        <button class="btn btn-primary btn-full" type="submit" data-submit disabled>Submit all</button>
+      </form>
+    </section>
+  `;
+  screenEnter();
+
+  const back = () => {
+    stopCamera();
+    renderGame();
+  };
+  document.querySelector("[data-back]").addEventListener("click", back);
+
+  const submitBtn = document.querySelector("[data-submit]");
+  const captionEl = document.querySelector("[name='caption']");
+
+  function nextEmptySlot() {
+    const empty = shots.findIndex((shot) => !shot);
+    return empty === -1 ? shots.length - 1 : empty;
+  }
+
+  function renderSlotGrid() {
+    document.querySelectorAll(".labeled-slot").forEach((button) => {
+      const index = Number(button.dataset.slot);
+      const thumb = button.querySelector("[data-slot-thumb]");
+      const filled = shots[index];
+      button.classList.toggle("active", index === activeSlot);
+      button.classList.toggle("filled", Boolean(filled));
+      thumb.innerHTML = filled
+        ? `<img src="${filled}" alt=""><button type="button" class="slot-clear" data-clear="${index}" aria-label="Remove photo">×</button>`
+        : `<span class="slot-plus">+</span>`;
+    });
+    document.querySelectorAll("[data-clear]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        shots[Number(btn.dataset.clear)] = null;
+        activeSlot = Number(btn.dataset.clear);
+        renderSlotGrid();
+        rebuildPreview();
+      });
+    });
+    submitBtn.disabled = !shots.every(Boolean);
+  }
+
+  async function rebuildPreview() {
+    if (!shots.every(Boolean)) {
+      composed = null;
+      submitBtn.disabled = true;
+      return;
+    }
+    const images = await Promise.all(shots.map(loadImage));
+    composed = composeProof({
+      mode: "collage",
+      images,
+      caption: captionEl.value,
+      title: quest.title,
+      reference: quest.prompt
+    });
+    submitBtn.disabled = false;
+  }
+
+  function setSlotShot(index, dataUrl) {
+    shots[index] = dataUrl;
+    activeSlot = nextEmptySlot();
+    renderSlotGrid();
+    rebuildPreview();
+  }
+
+  document.querySelector("[data-labeled-slots]").addEventListener("click", (event) => {
+    const slotBtn = event.target.closest("[data-slot]");
+    if (!slotBtn || event.target.closest("[data-clear]")) return;
+    activeSlot = Number(slotBtn.dataset.slot);
+    renderSlotGrid();
+  });
+
+  captionEl.addEventListener("input", rebuildPreview);
+
+  const uploadInput = document.querySelector("[name='upload']");
+  uploadInput.addEventListener("change", async () => {
+    const file = uploadInput.files?.[0];
+    if (file?.type.startsWith("image/")) setSlotShot(activeSlot, await fileToDataUrl(file));
+    uploadInput.value = "";
+  });
+
+  const feed = document.querySelector("[data-feed]");
+  const frame = document.querySelector("[data-capture-frame]");
+  const camBtn = document.querySelector("[data-cam-btn]");
+
+  camBtn.addEventListener("click", async () => {
+    if (cameraStream) {
+      const canvas = document.createElement("canvas");
+      canvas.width = feed.videoWidth || 1080;
+      canvas.height = feed.videoHeight || 1440;
+      canvas.getContext("2d").drawImage(feed, 0, 0, canvas.width, canvas.height);
+      setSlotShot(activeSlot, canvas.toDataURL("image/jpeg", 0.85));
+      stopCamera();
+      feed.hidden = true;
+      frame.classList.remove("capture-frame--live");
+      camBtn.classList.remove("cam-big--live");
+      camBtn.innerHTML = CAMERA_ICON;
+      camBtn.setAttribute("aria-label", "Open camera");
+      return;
+    }
+
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+      feed.srcObject = cameraStream;
+      feed.hidden = false;
+      frame.classList.add("capture-frame--live");
+      camBtn.classList.add("cam-big--live");
+      camBtn.innerHTML = "";
+      camBtn.setAttribute("aria-label", "Take photo");
+    } catch {
+      showToast("Camera unavailable — tap + on a slot to upload.");
+    }
+  });
+
+  renderSlotGrid();
+
+  document.querySelector("#submission-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!shots.every(Boolean)) {
+      showToast("Add a photo for every slot.");
+      return;
+    }
+    if (!composed) {
+      showToast("Still preparing your collage…");
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    const requiredFields = {};
+    slotLabels.forEach((label) => {
+      requiredFields[label] = label;
+    });
+
+    const mediaDataUrl = composed.dataUrl.length < 1_400_000 ? composed.dataUrl : "";
+    const payload = {
+      userId: state.user.id,
+      boardId: state.board.id,
+      questSlot: quest.slot,
+      questId: quest.id,
+      caption: form.get("caption") || "",
+      requiredFields,
+      compositionMode: "collage",
+      mediaName: `${quest.id}.jpg`,
+      mediaDataUrl
+    };
+    const result = await api("/api/submissions", { method: "POST", body: JSON.stringify(payload) });
+    stopCamera();
+    state.submissions = state.submissions.filter((submission) => Number(submission.questSlot) !== Number(quest.slot));
+    const { mediaDataUrl: _omit, ...lean } = result.submission;
+    state.submissions.push(lean);
+    activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
+    saveState();
+    showToast(affirmations[Math.floor(Math.random() * affirmations.length)], Math.random() > 0.35);
+    renderGame();
+  });
+}
+
 function renderCamera(slot) {
   const quest = state.board.quests.find((item) => Number(item.slot) === Number(slot));
+  if (hasLabeledSlots(quest)) {
+    renderLabeledSlotCamera(slot, quest, quest.photoSlots);
+    return;
+  }
   const isVideoQuest = quest.mediaType === "video";
   const allowMultiple = quest.composition === "collage";
   const shots = [];

@@ -697,6 +697,94 @@ button {
   gap: 16px;
 }
 
+.capture-hero--slots {
+  min-height: 160px;
+}
+
+.labeled-slots {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 10px;
+}
+
+.labeled-slot {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: center;
+}
+
+.labeled-slot.active .slot-thumb {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px rgba(255, 143, 171, 0.22);
+}
+
+.labeled-slot.filled .slot-thumb {
+  border-style: solid;
+}
+
+.slot-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  border: 2px dashed rgba(255, 143, 171, 0.38);
+  background: rgba(255, 255, 255, 0.75);
+  overflow: hidden;
+}
+
+.slot-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slot-plus {
+  font-size: 1.6rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--pink);
+}
+
+.slot-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--muted);
+}
+
+.slot-clear {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  font-weight: 800;
+  font-size: 0.8rem;
+  line-height: 1;
+  border: 0;
+  cursor: pointer;
+}
+
+.quest-nav--single {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.quest-nav-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0 4px;
+}
+
 .capture-hero {
   position: relative;
   display: grid;
