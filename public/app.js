@@ -1484,7 +1484,7 @@ function renderWaiting() {
       </div>
 
       <button class="btn btn-secondary btn-full" type="button" data-view-wall>🪩 Peek the party wall</button>
-      <button class="btn btn-ghost btn-full" type="button" data-reset>Reset phone</button>
+      <button class="btn btn-ghost btn-full" type="button" data-view-admin>Host view</button>
     </section>
   `;
   screenEnter();
@@ -1539,13 +1539,7 @@ function renderWaiting() {
   });
 
   document.querySelector("[data-view-wall]")?.addEventListener("click", () => go("party-wall"));
-  document.querySelector("[data-reset]")?.addEventListener("click", () => {
-    stopCamera();
-    localStorage.removeItem(STORAGE_KEY);
-    Object.assign(state, loadState());
-    clearInterval(waitingPoll);
-    renderJoin();
-  });
+  document.querySelector("[data-view-admin]")?.addEventListener("click", renderAdmin);
   waitingPoll = setInterval(async () => {
     await refreshStatus();
     if (gameStarted()) {
