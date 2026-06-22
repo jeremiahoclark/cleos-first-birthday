@@ -52,8 +52,9 @@ export const QUEST_STAGES = [
           id: "silly-hat-snapshot",
           title: "The Silly Hat Snapshot",
           composition: "caption",
-          prompt: "Take a picture with someone wearing a silly hat.",
-          requiredFields: ["Hat wearer's first name", "Was the hat planned or discovered?"]
+          prompt:
+            "Find someone wearing a silly hat who you did not arrive with. Ask their name and the hat story, then submit a photo together.",
+          requiredFields: ["Hat wearer's first name", "The hat story"]
         }
       ]
     ]
@@ -85,8 +86,9 @@ export const QUEST_STAGES = [
           id: "farthest-traveler",
           title: "The Farthest Traveler",
           composition: "caption",
-          prompt: "Find the guest who traveled the farthest to attend. Submit a photo with them.",
-          requiredFields: ["Where they came from"]
+          prompt:
+            "Find someone who traveled far to attend. Ask where they came from and one thing they hope Cleo gets from this party.",
+          requiredFields: ["Where they came from", "Their wish for Cleo"]
         },
         {
           id: "local-legend",
@@ -166,7 +168,7 @@ export const QUEST_STAGES = [
           composition: "plain",
           prompt:
             "Gather at least six guests for a photo or short video where everyone is doing the same birthday pose, cheer, or gesture.",
-          requiredFields: ["Which people are outside the team's original social circle"]
+          requiredFields: ["Which guests you met at the party today"]
         },
         {
           id: "grand-assembly",
@@ -186,7 +188,7 @@ export const FINAL_QUEST = {
   title: "The Future Advice Council",
   composition: "caption",
   prompt:
-    "Collect advice for future Cleo from five guests across different ages or life stages. Submit a team photo with at least three of them.",
+    "Collect advice for future Cleo from five guests across different ages or life stages. Submit a group photo with at least three of them.",
   requiredFields: ["Five advice lines"]
 };
 

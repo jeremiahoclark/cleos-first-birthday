@@ -1,5 +1,4 @@
 import { generateQuestBoard, scoreSubmissions } from "./shared/quests.js";
-import { generateTeamName } from "./shared/teamNames.js";
 import { createDeviceFingerprint, getClientIp, hashDeviceFingerprint } from "./shared/device.js";
 import { isDryRun, persistWhenLive } from "./shared/dryRun.js";
 
@@ -28,53 +27,11 @@ function makeId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
-async function getTeamCount(env) {
-  if (isDryRun(env) || !env.DB) return 0;
-  const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM teams WHERE event_id = ?")
-    .bind(EVENT_ID)
-    .first();
-  return row?.count ?? 0;
-}
-
-async function assignTeam(env, teamHint) {
-  if (isDryRun(env) || !env.DB) {
-    const index = Math.abs([...String(teamHint)].reduce((sum, char) => sum + char.charCodeAt(0), 0)) % 8;
-    const id = `dry_team_${index + 1}`;
-    return {
-      id,
-      name: generateTeamName(index),
-      quests: generateQuestBoard(id)
-    };
-  }
-
-  const existing = await env.DB.prepare(
-    `SELECT teams.id, teams.name, teams.quest_board_json, COUNT(users.id) AS member_count
-     FROM teams
-     LEFT JOIN users ON users.team_id = teams.id
-     WHERE teams.event_id = ?
-     GROUP BY teams.id
-     ORDER BY member_count ASC, teams.created_at ASC`
-  )
-    .bind(EVENT_ID)
-    .all();
-
-  const team = existing.results?.find((candidate) => Number(candidate.member_count) < 7);
-  if (team) {
-    return {
-      id: team.id,
-      name: team.name,
-      quests: JSON.parse(team.quest_board_json)
-    };
-  }
-
-  const index = await getTeamCount(env);
-  const id = makeId("team");
-  const name = generateTeamName(index);
-  const quests = generateQuestBoard(id);
-  await env.DB.prepare("INSERT INTO teams (id, event_id, name, quest_board_json) VALUES (?, ?, ?, ?)")
-    .bind(id, EVENT_ID, name, JSON.stringify(quests))
-    .run();
-  return { id, name, quests };
+function createPlayerBoard(userId) {
+  return {
+    id: userId,
+    quests: generateQuestBoard(userId)
+  };
 }
 
 async function registerUser(request, env) {
@@ -88,7 +45,7 @@ async function registerUser(request, env) {
   }
 
   const userId = makeId(isDryRun(env) ? "dry_user" : "user");
-  const team = await assignTeam(env, `${deviceId}:${gameName}`);
+  const board = createPlayerBoard(userId);
   const ip = getClientIp(request);
   const userAgent = request.headers.get("user-agent") || "";
   const acceptLanguage = request.headers.get("accept-language") || "";
@@ -96,14 +53,18 @@ async function registerUser(request, env) {
   const deviceHash = await hashDeviceFingerprint(fingerprint, crypto);
 
   const persistence = await persistWhenLive(env, async () => {
+    // Solo play: one guest, one board. team_id reuses the user id for schema compatibility.
+    await env.DB.prepare("INSERT INTO teams (id, event_id, name, quest_board_json) VALUES (?, ?, ?, ?)")
+      .bind(userId, EVENT_ID, gameName, JSON.stringify(board.quests))
+      .run();
     await env.DB.prepare(
       `INSERT INTO users
        (id, event_id, real_name, game_name, team_id, device_id, device_hash, ip_address, user_agent)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(userId, EVENT_ID, realName, gameName, team.id, deviceId, deviceHash, ip, userAgent)
+      .bind(userId, EVENT_ID, realName, gameName, userId, deviceId, deviceHash, ip, userAgent)
       .run();
-    await env.DEVICE_KV.put(`device:${deviceHash}`, JSON.stringify({ userId, teamId: team.id, eventId: EVENT_ID }));
+    await env.DEVICE_KV.put(`device:${deviceHash}`, JSON.stringify({ userId, boardId: userId, eventId: EVENT_ID }));
     return { userId };
   });
 
@@ -111,16 +72,17 @@ async function registerUser(request, env) {
     dryRun: isDryRun(env),
     persisted: persistence.persisted,
     user: { id: userId, realName, gameName, deviceId, deviceHash },
-    team
+    board
   });
 }
 
 async function submitQuest(request, env) {
   const body = await parseJson(request);
+  const boardId = String(body.boardId || body.teamId || "");
   const submission = {
     id: makeId(isDryRun(env) ? "dry_submission" : "submission"),
     eventId: EVENT_ID,
-    teamId: String(body.teamId || ""),
+    boardId,
     userId: String(body.userId || ""),
     questSlot: Number(body.questSlot),
     questId: String(body.questId || ""),
@@ -133,11 +95,11 @@ async function submitQuest(request, env) {
     createdAt: new Date().toISOString()
   };
 
-  if (!submission.teamId || !submission.userId || !submission.questId || !submission.questSlot) {
-    return json({ error: "teamId, userId, questSlot, and questId are required" }, { status: 400 });
+  if (!submission.boardId || !submission.userId || !submission.questId || !submission.questSlot) {
+    return json({ error: "boardId, userId, questSlot, and questId are required" }, { status: 400 });
   }
 
-  const mediaKey = `events/${EVENT_ID}/teams/${submission.teamId}/${submission.id}`;
+  const mediaKey = `events/${EVENT_ID}/guests/${submission.userId}/${submission.id}`;
   const persistence = await persistWhenLive(env, async () => {
     if (submission.mediaDataUrl && env.MEDIA_BUCKET) {
       await env.MEDIA_BUCKET.put(mediaKey, submission.mediaDataUrl, {
@@ -152,7 +114,7 @@ async function submitQuest(request, env) {
       .bind(
         submission.id,
         EVENT_ID,
-        submission.teamId,
+        submission.boardId,
         submission.userId,
         submission.questSlot,
         submission.questId,
@@ -202,7 +164,7 @@ async function getStatus(env) {
   return json({
     event: {
       id: EVENT_ID,
-      name: env.EVENT_NAME || "Cleo's First Birthday Team Quest",
+      name: env.EVENT_NAME || "Cleo's First Birthday Quest",
       durationSeconds: Number(env.GAME_DURATION_SECONDS || 3600)
     },
     dryRun: isDryRun(env),
@@ -214,22 +176,32 @@ async function getAdmin(env) {
   if (isDryRun(env) || !env.DB) {
     return json({
       dryRun: true,
-      teams: [],
+      guests: [],
       submissions: [],
       message: "Dry mode is active. Live D1/KV/R2 reads are intentionally skipped."
     });
   }
 
-  const [teams, submissions] = await Promise.all([
-    env.DB.prepare("SELECT id, name, score, created_at FROM teams WHERE event_id = ? ORDER BY created_at").bind(EVENT_ID).all(),
+  const [guests, submissions] = await Promise.all([
     env.DB.prepare(
-      "SELECT id, team_id, user_id, quest_slot, quest_id, caption, status, created_at FROM submissions WHERE event_id = ? ORDER BY created_at DESC"
+      `SELECT u.id, u.game_name, u.real_name, u.created_at,
+              COUNT(DISTINCT CASE WHEN s.status != 'rejected' THEN s.quest_slot END) AS score
+       FROM users u
+       LEFT JOIN submissions s ON s.user_id = u.id AND s.event_id = u.event_id
+       WHERE u.event_id = ?
+       GROUP BY u.id
+       ORDER BY score DESC, u.created_at ASC`
+    )
+      .bind(EVENT_ID)
+      .all(),
+    env.DB.prepare(
+      "SELECT id, user_id, quest_slot, quest_id, caption, status, created_at FROM submissions WHERE event_id = ? ORDER BY created_at DESC"
     )
       .bind(EVENT_ID)
       .all()
   ]);
 
-  return json({ dryRun: false, teams: teams.results || [], submissions: submissions.results || [] });
+  return json({ dryRun: false, guests: guests.results || [], submissions: submissions.results || [] });
 }
 
 export default {

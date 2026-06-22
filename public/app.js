@@ -3,14 +3,14 @@ import { initScene } from "/scene.js";
 
 const app = document.querySelector("#app");
 const gameBg = document.querySelector("#game-bg");
-const STORAGE_KEY = "cleoQuestState:v1";
+const STORAGE_KEY = "cleoQuestState:v2";
 const DEVICE_KEY = "cleoQuestDeviceId:v1";
 
 const affirmations = [
   "Quest captured. Cleo's archive just got better.",
   "That one is birthday-book material.",
   "Excellent proof. The parents are going to love this.",
-  "Team legend behavior.",
+  "Legend behavior.",
   "Memory secured. On to the next quest.",
   "That submission has serious party energy."
 ];
@@ -25,7 +25,7 @@ function loadState() {
   if (saved) return JSON.parse(saved);
   return {
     user: null,
-    team: null,
+    board: null,
     startedAt: null,
     submissions: [],
     feedback: []
@@ -121,7 +121,7 @@ function renderJoin() {
       <div class="join-badge">Treasure hunt · 60 minutes</div>
       <p class="kicker">Cleo's First Birthday</p>
       <h1 class="title-display">Bubble Quest</h1>
-      <p class="lead">Get a random crew, chase 10 photo treasures, meet everyone, and fill Cleo's birthday archive.</p>
+      <p class="lead">Chase 10 photo treasures solo, meet everyone, and fill Cleo's birthday archive.</p>
       <form id="join-form" class="stack" style="text-align:left;margin-top:6px">
         <label class="field">
           <span>Your real name</span>
@@ -148,10 +148,10 @@ function renderJoin() {
     };
     const result = await api("/api/register", { method: "POST", body: JSON.stringify(payload) });
     state.user = result.user;
-    state.team = result.team;
+    state.board = result.board;
     state.startedAt = state.startedAt || Date.now();
     saveState();
-    showToast(`Welcome to ${result.team.name}.`, true);
+    showToast(`Let's go, ${result.user.gameName}!`, true);
     renderGame();
   });
 }
@@ -180,8 +180,8 @@ function timerMarkup() {
   return `
     <section class="hunt-header" data-timer-card>
       <div>
-        <p class="kicker">Your crew</p>
-        <span class="team-name">${escapeHtml(state.team.name)}</span>
+        <p class="kicker">Playing as</p>
+        <span class="team-name">${escapeHtml(state.user.gameName)}</span>
       </div>
       <div class="timer-ring" aria-label="Time remaining">
         <svg viewBox="0 0 72 72" aria-hidden="true">
@@ -207,7 +207,7 @@ function timerMarkup() {
 // Slots 1-10 that still have no submission, as a friendly "Quest N" list.
 function unsubmittedSlots() {
   const done = new Set(state.submissions.map((s) => Number(s.questSlot)));
-  return (state.team?.quests || []).filter((q) => !done.has(Number(q.slot)));
+  return (state.board?.quests || []).filter((q) => !done.has(Number(q.slot)));
 }
 
 function isComplete(slot) {
@@ -259,7 +259,7 @@ function activeQuestView(quest, quests) {
             ? `
             <div class="complete-badge">
               <strong>Treasure secured!</strong>
-              <span>Logged for your crew. Keep hunting.</span>
+              <span>Logged for you. Keep hunting.</span>
             </div>
             <button class="btn btn-primary btn-full" data-next-open>Next treasure</button>
           `
@@ -277,7 +277,7 @@ function activeQuestView(quest, quests) {
 function renderGame() {
   stopCamera();
   clearInterval(timerHandle);
-  const quests = state.team.quests || status.quests;
+  const quests = state.board.quests || status.quests;
   if (!quests.some((quest) => Number(quest.slot) === Number(activeQuestSlot))) {
     activeQuestSlot = nextOpenQuestSlot(quests);
   }
@@ -318,7 +318,7 @@ function updateTimer() {
   }
 
   // Final 5 minutes: urgency mode. Pulse the timer card and surface the
-  // quests that still have no submission so teams can scramble.
+  // quests that still have no submission so guests can scramble.
   const card = document.querySelector("[data-timer-card]");
   const banner = document.querySelector("[data-urgency]");
   if (!card || !banner) return;
@@ -352,7 +352,7 @@ function bindGameEvents() {
     });
   });
   document.querySelector("[data-next-open]")?.addEventListener("click", () => {
-    activeQuestSlot = nextOpenQuestSlot(state.team.quests || status.quests);
+    activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
     renderGame();
   });
   document.querySelector("[data-view-admin]")?.addEventListener("click", renderAdmin);
@@ -385,7 +385,7 @@ function compactField(label, name, placeholder = "") {
 }
 
 function renderCamera(slot) {
-  const quest = state.team.quests.find((item) => Number(item.slot) === Number(slot));
+  const quest = state.board.quests.find((item) => Number(item.slot) === Number(slot));
   const isVideoQuest = quest.mediaType === "video";
   const allowMultiple = quest.composition === "collage";
   const shots = [];
@@ -587,7 +587,7 @@ function renderCamera(slot) {
 
     const payload = {
       userId: state.user.id,
-      teamId: state.team.id,
+      boardId: state.board.id,
       questSlot: quest.slot,
       questId: quest.id,
       caption: form.get("caption"),
@@ -602,7 +602,7 @@ function renderCamera(slot) {
     // Persist metadata only — composed data URLs are too large for localStorage.
     const { mediaDataUrl: _omit, ...lean } = result.submission;
     state.submissions.push(lean);
-    activeQuestSlot = nextOpenQuestSlot(state.team.quests || status.quests);
+    activeQuestSlot = nextOpenQuestSlot(state.board.quests || status.quests);
     saveState();
     showToast(affirmations[Math.floor(Math.random() * affirmations.length)], Math.random() > 0.35);
     renderGame();
@@ -692,12 +692,12 @@ function renderEnd() {
   app.innerHTML = `
     ${topbar()}
     <section class="panel panel-pad stack end-screen">
-      <p class="kicker">Time's up · ${escapeHtml(state.team.name)}</p>
+      <p class="kicker">Time's up · ${escapeHtml(state.user.gameName)}</p>
       <h1 class="title-display">${headline}</h1>
       <div class="final-score" aria-label="Final score">
         <span class="final-score-num">${score}</span><span class="final-score-den">/ 10</span>
       </div>
-      <p class="lead">Treasures found by your crew. Host confirms the winner.</p>
+      <p class="lead">Treasures you found. Host confirms highlights.</p>
       <div class="award-grid">
         ${awards
           .map(
@@ -728,13 +728,14 @@ async function renderAdmin() {
     <section class="panel panel-pad stack">
       <button class="btn btn-ghost" data-back>← Back to map</button>
       <p class="kicker">Host view</p>
-      <h2 class="title-quest">Scoreboard</h2>
+      <h2 class="title-quest">Guest board</h2>
       <p class="lead">${admin.dryRun ? "Dry mode — no Cloudflare writes." : "Live mode active."}</p>
       <div class="panel panel-pad">
-        <span class="team-name">${escapeHtml(state.team?.name || "Current crew")}</span>
+        <span class="team-name">${escapeHtml(state.user?.gameName || "You")}</span>
         <p class="title-quest" style="margin-top:8px;font-size:2.2rem">${completedCount()} / 10</p>
         <p class="muted">Gallery export hooks up to R2 when dry mode is off.</p>
       </div>
+      ${admin.guests?.length ? `<p class="muted">${admin.guests.length} guest(s) registered</p>` : ""}
       <div class="stack">${submissions || `<p class="muted">No local submissions yet.</p>`}</div>
       <button class="btn btn-secondary btn-full" type="button">Download gallery (soon)</button>
     </section>
@@ -746,7 +747,7 @@ async function renderAdmin() {
 async function boot() {
   initScene(gameBg);
   status = await api("/api/status");
-  if (!state.user || !state.team) renderJoin();
+  if (!state.user || !state.board) renderJoin();
   else renderGame();
 }
 
